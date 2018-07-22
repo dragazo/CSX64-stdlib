@@ -1,0 +1,15 @@
+
+# Created by https://www.gitignore.io/api/notepadpp,assembler
+
+### Assembler ###
+*.exe
+*.o
+*.obj
+*.bc
+
+### NotepadPP ###
+# Notepad++ backups #
+*.bak
+
+
+# End of https://www.gitignore.io/api/notepadpp,assembler
