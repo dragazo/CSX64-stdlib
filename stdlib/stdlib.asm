@@ -14,6 +14,8 @@ global RAND_MAX, rand, srand
 
 global abs, labs
 
+global bsearch
+
 ; -------------------------------------------
 
 extern isspace
@@ -877,6 +879,82 @@ labs:
     movs rax, rdi
     ret
 
+; -------------------------------------------
+
+; void *bsearch(const void *key, const void *base, size_t num, size_t size, int (*cmp)(const void*, const void*));
+bsearch:
+    ; directly from args:
+    ; rsi = base
+    ; rdx = num
+    
+    ; migrating to call-safe registers:
+    ; r13 = key
+    ; r14 = size
+    ; r15  = cmp
+    mov r13, rdi
+    mov r14, rcx
+    mov r15, r8
+    
+    ; while(num > 0)
+    jmp .aft
+    .search:
+        ; get the midpoint index into r10
+        mov r10, rdx
+        shr r10, 1
+        ; convert into a pointer
+        imul r10, r14
+        add r10, rsi
+        
+        ; int _cmp = cmp(key, mid)
+        push rsi
+        push rdx
+        push r10
+        mov rdi, r13
+        mov rsi, r10
+        call r15
+        pop r10
+        pop rdx
+        pop rsi
+        
+        ; if (_cmp == 0) return mid;
+        cmp eax, 0
+        move rax, r10
+        je .ret
+        
+        ; if (_cmp < 0) do lower half
+        js .lower
+        ; if (_cmp > 0) do upper half
+        ; v
+        
+        ; -- upper half -- ;
+        .upper:
+        
+        ; get upper half starting point (not including the item we just tested)
+        mov rsi, r10
+        add rsi, r14
+        
+        ; get upper half length (total length - lower half length - 1)
+        mov r10, rdx
+        shr r10, 1
+        sub rdx, r10
+        dec rdx
+        
+        jmp .aft
+        
+        ; -- lower half -- ;
+        .lower:
+        
+        ; get lower half length
+        shr rdx, 1
+        
+    .aft:
+        cmp rdx, 0
+        ja .search
+    
+    ; otherwise we didn't find it - return null
+    xor rax, rax
+    .ret: ret
+    
 segment .rodata
 
 align 8
