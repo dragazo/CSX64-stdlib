@@ -17,24 +17,18 @@ segment .text
 ; int remove(const char *path);
 remove:
     ; delete the file
-    mov eax, sys_remove
+    mov eax, sys_unlink
     mov rbx, rdi
     syscall
-    
-    ; return 0 (failure causes CSX64 to terminate)
-    xor eax, eax
     ret
 
 ; int rename(const char *from, const char *to);
 rename:
     ; rename the file
-    mov eax, sys_move
+    mov eax, sys_rename
     mov rbx, rdi
     mov rcx, rsi
     syscall
-    
-    ; return 0 (failure causes CSX64 to terminate)
-    xor eax, eax
     ret
 
 ; --------------------------------------
