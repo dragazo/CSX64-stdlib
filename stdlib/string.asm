@@ -43,7 +43,7 @@ segment .text
 ; void *memcpy(void *dest, const void *src, size_t num);
 memcpy:
     mov rax, rdi ; copy dest into rax (for return value)
-
+    
     ; for(int i = 0; i < num; ++i)
     xor rcx, rcx
     jmp .aft
