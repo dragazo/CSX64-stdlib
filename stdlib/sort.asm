@@ -93,19 +93,19 @@ bsearch:
 
 ; ---------------------------------------------
     
-; helper for __qsort - performs the swapping using __qsort_buf as an intermediate
+; helper for __qsort - performs the swapping using buf as an intermediate
 ; should not be used outside of __qsort
 __qsort_swap:
     ; r13/r14 have swap indicies
     ; r15 = size
     push r15
-    mov r15, [rsp + 24] ; r15 = size -- 24 is 8 off + r15 push + ret address
+    mov r15, [rsp + 48] ; r15 = size -- 48 is 32 off + r15 push + ret address
     
     ; [buf] <- [left]
-    mov rdi, [__qsort_buf]
+    mov rdi, [rsp + 32] ; buf -- 32 is 16 off + r15 push + ret address
     mov rax, r13
     mul r15
-    add rax, [rsp + 40] ; add base -- 40 is 24 off + r15 push + ret address
+    add rax, [rsp + 56] ; add base -- 56 is 40 off + r15 push + ret address
     mov rsi, rax
     push rsi
     mov rdx, r15
@@ -115,7 +115,7 @@ __qsort_swap:
     pop rdi
     mov rax, r14
     mul r15
-    add rax, [rsp + 40] ; add base -- 40 is 24 off + r15 push + ret address
+    add rax, [rsp + 56] ; add base -- 56 is 40 off + r15 push + ret address
     mov rsi, rax
     push rsi
     mov rdx, r15
@@ -123,99 +123,116 @@ __qsort_swap:
     
     ; [right] <- [buf]
     pop rdi
-    mov rsi, [__qsort_buf]
+    mov rsi, [rsp + 32] ; buf -- 32 is 16 off + r15 push + ret address
     mov rdx, r15
     call memcpy
+    
+    mov rax, r13
+    mov rbx, r14
+    
+    
+    
+    
+    extern __read_arr
+    ;call __read_arr
+    
+    
+    
     
     pop r15
     ret
 ; helper for qsort - uses a buffers pointed to by __qsort_buf.
-; void __qsort(void *base, size_t num, size_t size, int (*cmp)(const void*, const void*));
+; void __qsort(void *base, size_t size, int (*cmp)(const void*, const void*), void *buf, size_t low, size_t high);
 __qsort:
-    ; if (num < 2) already sorted
-    cmp rsi, 2
-    jb .ret
+    ; if (low >= high) return;
+    cmp r8, r9
+    jge .ret
     
     ; reserve call-safe registers 13-15 for working pointers
     push r13
     push r14
     push r15
     
-    ; [rsp + 24] = base (= rdi)
-    ; [rsp + 16] = num  (= rsi)
-    ; [rsp +  8] = size (= rdx)
-    ; [rsp +  0] = cmp  (= rcx)
+    ; [rsp + 40] = base (= rdi)
+    ; [rsp + 32] = size (= rsi)
+    ; [rsp + 24] = cmp  (= rdx)
+    ; [rsp + 16] = buf  (= rcx)
+    ; [rsp +  8] = low  (= r8)
+    ; [rsp +  0] = high (= r9)
     push rdi
     push rsi
     push rdx
     push rcx
+    push r8
+    push r9
     
-    ; for now, refer to args with registers
-    ; r15 = pointer to pivot (index 0)
-    mov r15, rdi
-    ; select pivot index
-    mov r13, rsi
+    ; -- select pivot - swap with high index -- ;
+    
+    ; r15 = pointer to pivot (index high)
+    mov rax, r9
+    mul rsi
+    lea r15, [rax + rdi]
+    
+    ; select pivot index -- (low + high) / 2
+    lea r13, [r8 + r9]
     shr r13, 1
-    ; swap pivot index with index 0 (pivot now in index 0)
-    xor r14, r14
+    ; swap pivot index with high index
+    mov r14, r9
     call __qsort_swap
     
-    ; from here on, args are referred to by address
+    ; -- pivot is now at high index -- ;
     
-    ; r13 = 0       = (left index)
-    ; r14 = num - 1 = (right index)
-    xor r13, r13
-    mov r14, [rsp + 16]
+    ; -- int i = low, j = high - 1;
+    ; i = r13 = (left  index)
+    ; j = r14 = (right index)
+    mov r13, [rsp + 8]
+    mov r14, [rsp + 0]
     dec r14
     
-    ; perform partitioning (<=pivot) | (>pivot)
-    ; for (; ; ++left, --right)
+    ; perform partitioning
+    ; while (true)
     .loop:
-        ; get a large item on the left
-        ; while(left < num && cmp(base[left], base[0]) <= 0) ++left;
-        jmp .left_aft
-        .left_loop: inc r13
-        .left_aft:
-            cmp r13, [rsp + 16]
-            jg .left_end
+        ; while (i < high && cmp(i, high) <= 0) ++i;
+        .left_loop:
+            cmp r13, [rsp + 0]
+            jge .left_end
             
             mov rax, r13
-            mul qword ptr [rsp + 8]
-            add rax, [rsp + 24]
+            mul qword ptr [rsp + 32]
+            add rax, [rsp + 40]
             mov rdi, rax
             mov rsi, r15
-            call [rsp]
+            call [rsp + 24]
             
             cmp eax, 0
             jg .left_end
             
+            inc r13
             jmp .left_loop
         .left_end:
         
-        ; get a small item on the right
-        ; while(right >= 0 && cmp(base[0], base[right]) < 0) --right;
-        jmp .right_aft
-        .right_loop: dec r14
-        .right_aft:
-            cmp r13, 0
+        ; while (j >= low && cmp(high, j) <= 0) --j;
+        .right_loop:
+            cmp r14, [rsp + 8]
             jl .right_end
             
             mov rdi, r15
             mov rax, r14
-            mul qword ptr [rsp + 8]
-            add rax, [rsp + 24]
+            mul qword ptr [rsp + 32]
+            add rax, [rsp + 40]
             mov rsi, rax
-            call [rsp]
+            call [rsp + 24]
             
             cmp eax, 0
-            jge .right_end
+            jg .right_end
             
+            dec r14
             jmp .right_loop
         .right_end:
         
-        ; if (left >= right) break;
+        ; if (i >= j) break;
         cmp r13, r14
-        jae .loop_end
+        jge .loop_end
         
         ; otherwise, swap the items
         call __qsort_swap
@@ -225,30 +242,40 @@ __qsort:
         jmp .loop
     .loop_end:
     
-    ; r13 = partition index (left index)
-    ; r14 = size
-    mov r14, [rsp + 8]
-    ; r15 = base
+    ; -- done partitioning -- ;
     
-    ; recurse into left sublist    
-    mov rdi, r15   ; left starts at same position
-    mov rsi, r13   ; left num = partition index
-    mov rdx, r14   ; same size items
-    mov rcx, [rsp] ; same comparator
+    ; now we need to put the pivot in its final position (index i)
+    ; if (i != high) swap(i, high)
+    mov r14, [rsp + 0]
+    cmp r13, r14
+    je .no_pivot_swap
+    call __qsort_swap
+    .no_pivot_swap:
+    
+    ; -- recursive step -- ;
+    
+    ; recurse into left sublist
+    ; __qsort(base, size, cmp, buf, low, i - 1);
+    mov rdi, [rsp + 40]
+    mov rsi, [rsp + 32]
+    mov rdx, [rsp + 24]
+    mov rcx, [rsp + 16]
+    mov r8,  [rsp +  8]
+    lea r9,  [r13 -  1]
     call __qsort
     
     ; recurse into right sublist
-    mov rax, r13        ; right starts at partition index
-    mul r14
-    lea rdi, [rax + r15]
-    mov rsi, [rsp + 16] ; right num = num - left num
-    sub rsi, r13
-    mov rdx, r14        ; same size items
-    mov rcx, [rsp]      ; same comparator
+    ; __qsort(base, size, cmp, buf, i + 1, high);
+    mov rdi, [rsp + 40]
+    mov rsi, [rsp + 32]
+    mov rdx, [rsp + 24]
+    mov rcx, [rsp + 16]
+    lea r8,  [r13 +  1]
+    mov r9,  [rsp +  0]
     call __qsort
     
     ; undo arg pushes
-    add rsp, 32
+    add rsp, 48
     
     ; restore call-safe registers
     pop r15
@@ -258,33 +285,34 @@ __qsort:
     .ret: ret
 ; void qsort(void *base, size_t num, size_t size, int (*cmp)(const void*, const void*));
 qsort:
-    ; create temporary buffers for helper to use (each sufficient to hold 1 element)
-    push rdi
-    push rsi
-    push rdx
-    push rcx
+    ; handle degenerate case num < 2
+    cmp rsi, 2
+    jl .ret
     
+    ; create a temporary buffer for helper to use (sufficient to hold 1 element)
+    push rdi ; base = [rsp + 32]
+    push rsi ; num  = [rsp + 24]
+    push rdx ; size = [rsp + 16]
+    push rcx ; cmp  = [rsp +  8]
     mov rdi, rdx
     call malloc
-    mov [__qsort_buf], rax
-    
-    pop rcx
-    pop rdx
-    pop rsi
-    pop rdi
+    push rax ; buf  = [rsp +  0]
     
     ; call helper
+    ; __qsort(base, size, cmp, buf, 0, num - 1);
+    mov rdi, [rsp + 32]
+    mov rsi, [rsp + 16]
+    mov rdx, [rsp +  8]
+    mov rcx, rax
+    xor r8,  r8
+    mov r9,  [rsp + 24]
+    dec r9
     call __qsort
     
     ; free the temporary buffers
-    mov rdi, [__qsort_buf]
+    pop rdi
     call free
+    ; undo initial pushes
+    add rsp, 32
     
-    ret
-    
-; --------------------------------------
-
-segment .bss
-
-align 8
-__qsort_buf: resq 1 ; pointer to buffer used by __qsort helper
+    .ret: ret
