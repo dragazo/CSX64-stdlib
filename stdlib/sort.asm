@@ -127,18 +127,6 @@ __qsort_swap:
     mov rdx, r15
     call memcpy
     
-    mov rax, r13
-    mov rbx, r14
-    
-    
-    
-    
-    extern __read_arr
-    ;call __read_arr
-    
-    
-    
-    
     pop r15
     ret
 ; helper for qsort - uses a buffers pointed to by __qsort_buf.
