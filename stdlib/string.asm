@@ -42,20 +42,12 @@ segment .text
 
 ; void *memcpy(void *dest, const void *src, size_t num);
 memcpy:
-    mov rax, rdi ; copy dest into rax (for return value)
+    ; copy dest into rax (for return value)
+    mov rax, rdi
     
-    ; for(int i = 0; i < num; ++i)
-    xor rcx, rcx
-    jmp .aft
-    .top:
-        ; copy the byte
-        mov bl, [rsi+rcx]
-        mov [rdi+rcx], bl
-        
-        inc rcx
-    .aft:
-        cmp rcx, rdx
-        jb .top
+    ; copy the data
+    mov rcx, rdx
+    rep movsb
     
     ret
 
