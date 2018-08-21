@@ -47,6 +47,7 @@ memcpy:
     
     ; copy the data
     mov rcx, rdx
+    cld
     rep movsb
     
     ret
