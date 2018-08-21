@@ -54,40 +54,33 @@ memcpy:
 
 ; void *memmove(void *dest, const void *src, sizt_t num);
 memmove:
-    ; push args on stack for safety
-    push rdi
-    push rsi
-    push rdx
+    ; copy dest into rax (for return value)
+    mov rax, rdi
     
-    ; get a temp array
-    mov rdi, rdx
-    call malloc
+    ; move num into rcx
+    mov rcx, rdx
     
-    ; push temp array for safety
-    push rax
+    ; -----------------------
     
-    ; copy src to temp
-    mov rdi, rax
-    mov rsi, [rsp+16]
-    mov rdx, [rsp+8]
-    call memcpy
+    ; cmp dest, src
+    cmp rdi, rsi
+    ja .backwards
     
-    ; copy temp to dest
-    mov rdi, [rsp+24]
-    mov rsi, [rsp]
-    mov rdx, [rsp+8]
-    call memcpy
+    ; -- forward copy -- ;
     
-    ; deallocate temp array
-    pop rdi
-    call free
+    cld
+    rep movsb
+    ret
     
-    ; clean up stack
-    pop rax
-    pop rax
-    pop rax
+    ; -- backward copy -- ;
+    .backwards:
     
-    ; return (rax now contains dest)
+    ; modify dest/src to point to the last element in the copy range
+    lea rdi, [rdi + rcx - 1]
+    lea rsi, [rsi + rcx - 1]
+    
+    std
+    rep movsb
     ret
 
 ; char *strcpy(char *dest, const char *src);
