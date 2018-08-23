@@ -87,14 +87,13 @@ memmove:
 strcpy:
     mov rax, rdi ; store dest in rax (for return value)
     
+    xor rcx, rcx
     .top:
         ; copy a char
-        mov bl, [rsi]
-        mov [rdi], bl
+        mov bl, [rsi + rcx]
+        mov [rdi + rcx], bl
         
-        ; increment dest/src pointers
-        inc rdi
-        inc rsi
+        inc rcx
         
         ; if char was non-zero, repeat
         cmp bl, 0
@@ -110,12 +109,10 @@ strncpy:
     jmp .aft
     .top:
         ; copy a char
-        mov bl, [rsi]
-        mov [rdi], bl
+        mov bl, [rsi + rcx]
+        mov [rdi + rcx], bl
         
-        ; increment dest/src pointers
-        inc rdi
-        inc rsi
+        inc rcx
         
         ; if char was null terminator, return
         cmp bl, 0
@@ -173,35 +170,19 @@ strncat:
     pop rax
     ret
     
-; int memcmp(const void *ptr1, const void *ptr2, size_t num); // ret >0 -> ptr1 > ptr2
+; int memcmp(const void *ptr1, const void *ptr2, size_t num);
 memcmp:
-    ; for(int count = 0; count < num; ++count)
-    xor rcx, rcx ; zero count
-    jmp .aft
-    .top:
-        ; get ptr1 byte
-        mov al, [rdi+rcx]
-        ; sub ptr2 byte
-        sub al, [rsi+rcx]
-        
-        ; if that's non-zero, return it
-        jnz .ret_diff
-        
-        inc rcx ; inc count
-    .aft:
-        cmp rcx, rdx
-        jb .top
+    ; run past all the equal bytes
+    cld
+    mov rcx, rdx
+    repe cmpsb
+    ; we're now 1 past the end (if all equal) or 1 past the first different byte
     
-    .ret_same:
-        ; zero return val
-        xor eax, eax
-        ret
-    
-    .ret_diff:
-        ; sign extend difference to 32-bit
-        cbw
-        cwde
-        ret
+    ; return the difference sign extended to 32-bit
+    mov al, [rdi - 1]
+    sub al, [rsi - 1]
+    movsx eax, al
+    ret
 
 ; int strcmp(const char *str1, const char *str2); // ret >0 -> str1 > str2
 strcmp:
@@ -488,15 +469,6 @@ strpbrk:
     
     .ret_null: xor rax, rax
     .ret: ret
-
-
-
-
-
-
-
-
-   
     
 ; void *memset(void *ptr, int value, size_t num);
 memset:
@@ -539,7 +511,3 @@ strlen:
 segment .rodata
 
 errno_NOTIMPLEMENTED: db "ERRNO NOT IMPLEMENTED YET", 0
-
-
-
-
