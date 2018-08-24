@@ -54,15 +54,10 @@ memcpy:
 
 ; void *memmove(void *dest, const void *src, sizt_t num);
 memmove:
-    ; copy dest into rax (for return value)
-    mov rax, rdi
+    mov rax, rdi ; copy dest into rax (for return value)
+    mov rcx, rdx ; move num into rcx
     
-    ; move num into rcx
-    mov rcx, rdx
-    
-    ; -----------------------
-    
-    ; cmp dest, src
+    ; pick a copy direction
     cmp rdi, rsi
     ja .backwards
     
@@ -104,74 +99,100 @@ strcpy:
 
 ; char *strncpy(char *dest, const char *src, size_t num);
 strncpy:
-    mov rax, rdi ; store dest in rax (for return value)
+    mov r8, rdi ; store dest in r8 for safekeeping
     
+    ; for(i = 0; i < num; ++i)
+    xor rcx, rcx
     jmp .aft
     .top:
-        ; copy a char
-        mov bl, [rsi + rcx]
-        mov [rdi + rcx], bl
+        ; dest[i] = src[i]
+        mov al, [rsi + rcx]
+        mov [rdi + rcx], al
         
+        ; PRE-increment (important)
         inc rcx
         
-        ; if char was null terminator, return
-        cmp bl, 0
-        je .ret
+        ; if char was nonzero, continue
+        cmp al, 0
+        jne .aft
+        ; otherwise pad with zeros to end and return
+        cld
+        add rdi, rcx
+        sub rdx, rcx
+        mov rcx, rdx
+        rep stosb ; (AL already contains zero)
+        jmp .ret
         
-        ; decrement num
-        dec rdx
     .aft:
-        cmp rdx, 0 ; if num is above zero, enter loop
-        ja .top
-    
-    ; getting here means num terminated us early - append null terminator
-    mov byte ptr [rdi], 0
+        cmp rcx, rdx
+        jb .top
     
     ; return dest
-    .ret: ret
+    .ret:
+    mov rax, r8
+    ret
 
 ; char *strcat(char *dest, const char *src);
 strcat:
-    ; push args for safekeeping
-    push rsi
-    push rdi
+    push rdi ; push dest for safekeeping
     
-    ; get length of dest
-    call strlen
+    ; skip past the null term in dest
+    cld
+    xor rax, rax
+    mov rcx, -1
+    repne scasb
+    ; rdi is now 1 past null term - dec to point at null
+    dec rdi
     
-    ; use strcpy to perform the copy
-    pop rdi
-    add rdi, rax ; copy dest is dest + len(dest)
-    pop rsi
+    ; use strcpy to perform the cat
     call strcpy
-    
-    ; return dest
-    ret
-    
-; char *strncat(char *dest, const char *src, size_t num);
-strncat:
-    ; push args for safekeeping
-    push rdi ; extra copy of dest here for return value
-    push rdx
-    push rsi
-    push rdi
-    
-    ; get length of dest
-    call strlen
-    
-    ; use strncpy to perform the copy
-    pop rdi
-    add rdi, rax ; copy dest is dest + len(dest)
-    pop rsi
-    pop rdx ; recover num parameter
-    call strncpy
     
     ; return dest
     pop rax
     ret
     
+; char *strncat(char *dest, const char *src, size_t num);
+strncat:
+    push rdi ; push dest for safekeeping
+    
+    ; skip past the null term in dest
+    cld
+    xor rax, rax
+    mov rcx, -1
+    repne scasb
+    ; rdi is now 1 past null term - dec to point at null
+    dec rdi
+    
+    ; append at most num bytes
+    xor rcx, rcx
+    jmp .aft
+    .top:
+        ; dest[i] = src[i]
+        mov al, [rsi + rcx]
+        mov [rdi + rcx], al
+        
+        ; if we copied a null, we're done
+        cmp al, 0
+        jz .ret
+        
+    .aft:
+        cmp rcx, rdx
+        jb .top
+    
+    ; if we get here, we hit the num limit - append the null terminator
+    mov byte ptr [rdi + rcx], 0
+    
+    ; return dest
+    .ret:
+    pop rax
+    ret
+    
 ; int memcmp(const void *ptr1, const void *ptr2, size_t num);
 memcmp:
+    ; if (num == 0) return 0
+    cmp rdx, 0
+    jz .ret_z
+    
     ; run past all the equal bytes
     cld
     mov rcx, rdx
@@ -183,46 +204,43 @@ memcmp:
     sub al, [rsi - 1]
     movsx eax, al
     ret
+    
+    .ret_z: ; return zero
+    xor rax, rax
+    ret
 
 ; int strcmp(const char *str1, const char *str2); // ret >0 -> str1 > str2
 strcmp:
-    ; for(int count = 0; count < num; ++count)
+    ; for(int count = 0; ; ++count)
     xor rcx, rcx ; zero count
     .top:
-        ; get str1 byte (a)
-        mov al, [rdi+rcx]
-        ; get str2 byte (b)
-        mov bl, [rsi+rcx]
+        mov al, [rdi + rcx] ; get str1 byte (a)
+        mov bl, [rsi + rcx] ; get str2 byte (b)
         
-        ; if a = 0, return b
+        ; if (a == 0) return b
         cmp al, 0
         movz al, bl
         jz .ret_diff
         
-        ; if b = 0, return -a
+        ; if (b == 0_ return -a
         mov r8b, al
         neg r8b
         cmp bl, 0
         movz al, r8b
         jz .ret_diff
         
-        ; if a-b != 0, return a-b
+        ; if (a - b != 0) return a - b
         sub al, bl
         cmp al, 0
         jnz .ret_diff
         
-        inc rcx ; inc count
+        ; inc count
+        inc rcx
         jmp .top
-    
-    .ret_same:
-        ; zero return val
-        xor eax, eax
-        ret
     
     .ret_diff:
         ; sign extend difference to 32-bit
-        cbw
-        cwde
+        movsx eax, al
         ret
         
 ; int strncmp(const char *str1, const char *str2, size_t num); // ret >0 -> str1 > str2
@@ -231,29 +249,27 @@ strncmp:
     xor rcx, rcx ; zero count
     jmp .aft
     .top:
-        ; get str1 byte (a)
-        mov al, [rdi+rcx]
-        ; get str2 byte (b)
-        mov bl, [rsi+rcx]
+        mov al, [rdi + rcx] ; get str1 byte (a)
+        mov bl, [rsi + rcx] ; get str2 byte (b)
         
-        ; if a = 0, return b
+        ; if (a == 0) return b
         cmp al, 0
         movz al, bl
         jz .ret_diff
         
-        ; if b = 0, return -a
+        ; if (b == 0) return -a
         mov r8b, al
         neg r8b
         cmp bl, 0
         movz al, r8b
         jz .ret_diff
         
-        ; if a-b != 0, return a-b
+        ; if (a - b != 0) return a - b
         sub al, bl
         cmp al, 0
         jnz .ret_diff
         
-        inc rcx ; inc count
+        inc rcx
     .aft:
         cmp rcx, rdx
         jb .top
@@ -265,29 +281,32 @@ strncmp:
     
     .ret_diff:
         ; sign extend difference to 32-bit
-        cbw
-        cwde
+        movsx eax, al
         ret 
         
 ; void *memchr (void *ptr, int value, size_t num);
 memchr:
-    ; for(int i = 0; i < num; ++i)
-    xor rcx, rcx
-    jmp .aft
-    .top:
-        ; if this byte is the value, return ptr
-        cmp [rdi], sil
-        move rax, rdi
-        je .ret
-        
-        inc rcx
-    .aft:
-        cmp rcx, rdx
-        jb .top
-        
-    xor rax, rax ; broke out of loop - not found (return null)
-    .ret: ret
-        
+    ; if (num == 0) return null;
+    cmp rdx, 0
+    jz .no_match
+    
+    ; skip past all the unequal bytes
+    mov rax, rsi
+    mov rcx, rdx
+    cld
+    repne scasb
+    ; rdi is now either 1 past end (none found) or 1 past first occurrence of value
+    
+    ; if we didn't find one, return null
+    jne .no_match
+    ; otherwise return its address
+    lea rax, [rdi - 1]
+    ret
+    
+    .no_match:
+    xor rax, rax
+    ret
+    
 ; char *strchr (char *str, int character);
 strchr:
     .top:
@@ -492,19 +511,20 @@ strerror:
     
 ; size_t strlen(const char *str);
 strlen:
-    xor rax, rax ; zero len
+    ; store str in r8 for safekeeping
+    mov r8, rdi
     
-    .top:
-        ; if this char is null, break
-        cmp byte ptr [rdi+rax], 0
-        je .ret
-        
-        ; inc len and repeat
-        inc rax
-        jmp .top
-        
-    ; return len
-    .ret: ret
+    ; skip all nonzero bytes
+    cld
+    xor rax, rax
+    mov rcx, -1
+    repne scasb
+    ; rdi is now 1 past the first zero byte
+    
+    ; return length of string
+    lea rax, [rdi - 1]
+    sub rax, r8
+    ret
 
 ; --------------------------
     
