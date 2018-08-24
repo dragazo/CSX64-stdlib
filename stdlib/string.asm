@@ -472,17 +472,17 @@ strpbrk:
     
 ; void *memset(void *ptr, int value, size_t num);
 memset:
-    mov rax, rdi ; copy ptr to rax (for return value)
+    mov r8, rdi ; copy ptr to r8 for safekeeping
     
-    jmp .aft
-    .top:
-        ; copy a byte (value as unsigned char)
-        mov [rdi], sil
-        
-        dec rdx ; dec num
-    .aft:
-        cmp rdx, 0 ; if num > 0, repeat
-        ja .aft
+    ; fill in the values
+    cld
+    mov rax, rsi
+    mov rcx, rdx
+    rep stosb
+    
+    ; return ptr
+    mov rax, r8
+    ret
     
 ; const char *strerror(int errnum);
 strerror:
