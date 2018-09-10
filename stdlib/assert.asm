@@ -9,7 +9,7 @@ segment .text
 ; void assert(int);
 assert:
     cmp edi, 0
-    jz .ret
+    jnz .ret
     
     ; write error message
     mov eax, sys_write

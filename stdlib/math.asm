@@ -25,43 +25,58 @@ segment .text
 ; double sin(double x);
 sin:
     movsd [qtemp], xmm0
+    finit
     fld qword ptr [qtemp]
     fsin
     fstp qword ptr [qtemp]
+    fwait
     movsd xmm0, [qtemp]
+    ret
 ; double cos(double x);
 cos:
     movsd [qtemp], xmm0
+    finit
     fld qword ptr [qtemp]
     fcos
     fstp qword ptr [qtemp]
+    fwait
     movsd xmm0, [qtemp]
+    ret
 ; double tan(double x);
 tan:
     movsd [qtemp], xmm0
+    finit
     fld qword ptr [qtemp]
     fsincos
     fdivp st1, st0
     fstp qword ptr [qtemp]
+    fwait
     movsd xmm0, [qtemp]
+    ret
 
 ; double atan(double x);
 atan:
     movsd [qtemp], xmm0
+    finit
     fld qword ptr [qtemp]
     fld1
     fpatan
     fstp qword ptr [qtemp]
+    fwait
     movsd xmm0, [qtemp]
+    ret
 ; double atan2(double y, double x);
 atan2:
     movsd [qtemp], xmm0
+    movsd [qtemp2], xmm1
+    finit
     fld qword ptr [qtemp]
-    movsd [qtemp], xmm1
-    fld qword ptr [qtemp]
+    fld qword ptr [qtemp2]
     fpatan
     fstp qword ptr [qtemp]
+    fwait
     movsd xmm0, [qtemp]
+    ret
 
 ; -----------------------------
 
@@ -71,9 +86,10 @@ pow:
     
     ; get args out of xmm and into the fpu
     movsd [qtemp], xmm1
-    fld qword ptr [qtemp] ; st1 holds exponent
-    movsd [qtemp], xmm0
-    fld qword ptr [qtemp] ; st0 holds base
+    movsd [qtemp2], xmm0
+    finit
+    fld qword ptr [qtemp]  ; st1 holds exponent
+    fld qword ptr [qtemp2] ; st0 holds base
     
     ; do the b*log2(a) part -- only thing on stack now is result
     fyl2x
@@ -99,9 +115,8 @@ pow:
     
     ; store back in xmm0 for return
     fstp qword ptr [qtemp]
+    fwait
     movsd xmm0, [qtemp]
-    
-    ; return result
     ret
 ; double exp(double x);
 exp:
@@ -111,55 +126,53 @@ exp:
     ret
 ; double sqrt(double x);
 sqrt:
-    movsd [qtemp], xmm0
-    fld qword ptr [qtemp]
-    fsqrt
-    fstp qword ptr [qtemp]
-    movsd xmm0, [qtemp]
+    sqrtsd xmm0, xmm0
     ret
     
 ; -----------------------------------
 
 ; double log2(double x);
 log2:
-    fld1
     movsd [qtemp], xmm0
+    finit
+    fld1
     fld qword ptr [qtemp]
     fyl2x
     fstp qword ptr [qtemp]
+    fwait
     movsd xmm0, [qtemp]
     ret
 ; double log(double x);
 log:
-    fld1
-    fldl2e
-    fdivp st1, st0
     movsd [qtemp], xmm0
+    finit
+    fld qword ptr [rl2e]
     fld qword ptr [qtemp]
     fyl2x
     fstp qword ptr [qtemp]
+    fwait
     movsd xmm0, [qtemp]
     ret
 ; double log1p(double x);
 log1p:
-    fld1
-    fldl2e
-    fdivp st1, st0
     movsd [qtemp], xmm0
+    finit
+    fld qword ptr [rl2e]
     fld qword ptr [qtemp]
     fyl2xp1
     fstp qword ptr [qtemp]
+    fwait
     movsd xmm0, [qtemp]
     ret
 ; double log10(double x);
 log10:
-    fld1
-    fldl2t
-    fdivp st1, st0
     movsd [qtemp], xmm0
+    finit
+    fld qword ptr [rl2t]
     fld qword ptr [qtemp]
     fyl2x
     fstp qword ptr [qtemp]
+    fwait
     movsd xmm0, [qtemp]
     ret
 
@@ -169,26 +182,31 @@ log10:
 round:
     ; get x into the fpu
     movsd [qtemp], xmm0
+    finit
     fld qword ptr [qtemp]
     
     ; set rounding mode
     fstcw [qtemp]
+    fwait
     and word ptr [qtemp], ~0xc00
     fldcw [qtemp]
     
     ; return result
     frndint
     fstp qword ptr [qtemp]
+    fwait
     movsd xmm0, [qtemp]
     ret
 ; double floor(double x);
 floor:
     ; get x into the fpu
     movsd [qtemp], xmm0
+    finit
     fld qword ptr [qtemp]
     
     ; set rounding mode
     fstcw [qtemp]
+    fwait
     and word ptr [qtemp], ~0xc00
     or word ptr [qtemp], 0x100
     fldcw [qtemp]
@@ -196,16 +214,19 @@ floor:
     ; return result
     frndint
     fstp qword ptr [qtemp]
+    fwait
     movsd xmm0, [qtemp]
     ret
 ; double ceil(double x);
 ceil:
     ; get x into the fpu
     movsd [qtemp], xmm0
+    finit
     fld qword ptr [qtemp]
     
     ; set rounding mode
     fstcw [qtemp]
+    fwait
     and word ptr [qtemp], ~0xc00
     or word ptr [qtemp], 0x200
     fldcw [qtemp]
@@ -213,22 +234,26 @@ ceil:
     ; return result
     frndint
     fstp qword ptr [qtemp]
+    fwait
     movsd xmm0, [qtemp]
     ret
 ; double trunc(double x);
 trunc:
     ; get x into the fpu
     movsd [qtemp], xmm0
+    finit
     fld qword ptr [qtemp]
     
     ; set rounding mode
     fstcw [qtemp]
+    fwait
     or word ptr [qtemp], 0xc00
     fldcw [qtemp]
     
     ; return result
     frndint
     fstp qword ptr [qtemp]
+    fwait
     movsd xmm0, [qtemp]
     ret
 
@@ -237,9 +262,10 @@ trunc:
 ; double fmod(double numer, double denom);
 fmod:
     movsd [qtemp], xmm1
-    fld qword ptr [qtemp] ; st1 holds denom
-    movsd [qtemp], xmm0
-    fld qword ptr [qtemp] ; st0 holds numer
+    movsd [qtemp2], xmm0
+    finit
+    fld qword ptr [qtemp]  ; st1 holds denom
+    fld qword ptr [qtemp2] ; st0 holds numer
     
     ; compute remainder
     fprem
@@ -247,14 +273,16 @@ fmod:
     
     ; return result
     fstp qword ptr [qtemp]
+    fwait
     movsd xmm0, [qtemp]
     ret
 ; double remainder(double numer, double denom);
 remainder:
     movsd [qtemp], xmm1
-    fld qword ptr [qtemp] ; st1 holds denom
-    movsd [qtemp], xmm0
-    fld qword ptr [qtemp] ; st0 holds numer
+    movsd [qtemp2], xmm0
+    finit
+    fld qword ptr [qtemp]  ; st1 holds denom
+    fld qword ptr [qtemp2] ; st0 holds numer
     
     ; compute remainder
     fprem1
@@ -262,6 +290,7 @@ remainder:
     
     ; return result
     fstp qword ptr [qtemp]
+    fwait
     movsd xmm0, [qtemp]
     ret
 
@@ -271,7 +300,7 @@ remainder:
 fmin:
     minsd xmm0, xmm1
     ret
-; double fminf(double x, double y);
+; float fminf(float x, float y);
 fminf:
     minss xmm0, xmm1
     ret
@@ -280,7 +309,7 @@ fminf:
 fmax:
     maxsd xmm0, xmm1
     ret
-; double fmaxf(double x, double y);
+; float fmaxf(float x, float y);
 fmaxf:
     maxss xmm0, xmm1
     ret
@@ -290,9 +319,12 @@ fmaxf:
 segment .rodata
 
 align 8
-fe: dq 2.7182818284590452353602874713527 ; not using __e__ in case it's remove later on
+fe:   dq 2.7182818284590452353602874713527 ; e
+rl2e: dq 0.6931471805599453094172321214582 ; 1 / log2(2)
+rl2t: dq 0.3010299956639811952137388947245 ; 1 / log2(10)
 
 segment .bss
 
 align 8
-qtemp: resq 1 ; 64-bit temporary
+qtemp:  resq 1 ; 64-bit temporary
+qtemp2: resq 1 ; extra 64-bit temporary (e.g. used by binary math functions)
