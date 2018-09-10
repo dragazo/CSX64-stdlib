@@ -559,11 +559,12 @@ calloc:
     jz .ret
     
     ; zero the contents
-    jrcxz .ret ; hopefully redundant, but safer to make sure
-    .loop:
-        sub rcx, 8
-        mov qword ptr [rax + rcx], 0
-        jnz .loop
+    mov r8,  rax ; save return value in r8
+    mov rdi, rax ; set fill destination
+    xor rax, rax ; set fill value
+    shr rcx, 3   ; get # of 64-bit blocks to fill
+    rep stosq    ; fill with zero
+    mov rax, r8  ; restore return value
     
     .ret: ret
 ; void *realloc(void *ptr, qword size);
