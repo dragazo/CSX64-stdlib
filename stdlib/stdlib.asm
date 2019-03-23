@@ -358,29 +358,30 @@ NULL: equ 0
 ; void *align(void *ptr, ulong align);
 ; align value must be a power of 2
 _align:
-    ; get position in block (rcx)
-    mov rbx, rsi
-    dec rbx
-    mov rcx, rdi
-    and rcx, rbx
-    
-    ; aligned in rax
+    ; make a copy of ptr in the return value
     mov rax, rdi
-    sub rsi, rcx
-    add rax, rsi
-    
-    ; if pos was zero, return the unaligned instead
-    cmp rcx, 0
-    movz rax, rdi
+
+    ; compute the required alignment offset
+    neg rdi
+    dec rsi
+    and rdi, rsi
+
+    ; apply the offset and return the aligned pointer
+    add rax, rdi
     ret
 
 ; -------------------------------------------
 
 ; the amount of memory for malloc to request at a time
 ; must be a power of 2
-_malloc_step: equ 1 * 1024 * 1024
+_malloc_step: equ 1 * 1024 * 1024 ; 1 MB
 
-; <- stack | ([void *next][void *prev][... data ...])...
+; custom (naive) malloc impl structure:
+;            V initial sys brk (base of stack space)
+; <--- stack | ([void *next][void *prev][... data ...])...
+;              ^ doubly-linked list of zero or more malloc data blocks
+
+; we shall assume no one else will be manipulating memory beyond the initial breakpoint
 ; pointers will be 8-byte aligned.
 ; bit 0 of next will hold 1 if this block is occupied.
 
@@ -413,7 +414,8 @@ malloc:
     cmp rsi, 0
     jnz .ok
     
-    ; otherwise initialize beg/end and reload 
+    ; otherwise initialize beg/end and reload
+    ; this just sets beg/end - doesn't allocate any space
     mov r11, rdi
     mov eax, sys_brk
     xor ebx, ebx
@@ -426,7 +428,7 @@ malloc:
     mov rsi, rax
     mov r8, rax
     mov rdi, r11
-    
+
     .ok:
     ; look through the list for an available block of sufficient size
     ; for(void *prev = 0, *pos = beg; pos < end; prev = pos, pos = pos->next)
@@ -524,17 +526,16 @@ malloc:
     mov rsi, _malloc_step
     call _align
     mov rdi, r11
-    
+
     ; add that much memory
     mov r9, rax
     mov eax, sys_brk
     xor ebx, ebx
     syscall
-    mov rbx, rax
-    add rbx, r9
+    lea rbx, [rax + r9]
     mov eax, sys_brk
     syscall
-    
+
     ; if we got a zero return, we're good
     cmp rax, 0
     jz .enough_space
