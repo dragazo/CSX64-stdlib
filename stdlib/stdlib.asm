@@ -880,9 +880,9 @@ labs:
     neg rax
     movs rax, rdi
     ret
-    
+
 ; ---------------------------------------------
-    
+
 segment .rodata
 
 align 8

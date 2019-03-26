@@ -25,5 +25,5 @@ assert:
 
 segment .rodata
 
-err_msg: db "ASSERTION FAILURE", 10
+err_msg: db `\n\nASSERTION FAILURE\n\n`
 err_msg_len: equ $-err_msg
