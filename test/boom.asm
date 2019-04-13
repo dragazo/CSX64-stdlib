@@ -9,6 +9,10 @@ extern malloc, calloc, free, realloc
 segment .text
 
 main:
+	; make sure the cmd line args array is null terminated
+	cmp qword ptr [rsi + 8*rdi], 0
+	jnz .bad_args
+
     mov edi, 32
     call malloc
 
@@ -52,6 +56,17 @@ main:
 	xor eax, eax
     ret
 
+.bad_args:
+
+    mov eax, sys_write
+    mov ebx, 2
+    mov ecx, no_cmd_term_msg
+    mov edx, no_cmd_term_msg_len
+    syscall
+
+	mov eax, 24
+    ret
+	
 .bad_malloc:
 
     mov eax, sys_write
@@ -125,3 +140,6 @@ diff_block_msg_len: equ $-diff_block_msg
 
 nonzero_msg: db `\n\nCALLOC DID NOT ZERO RETURNED MEMORY!!\n\n`
 nonzero_msg_len: equ $-nonzero_msg
+
+no_cmd_term_msg: db `\n\nNO COMMAND LINE ARG TERMINATOR!!\n\n`
+no_cmd_term_msg_len: equ $-no_cmd_term_msg
