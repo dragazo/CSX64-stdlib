@@ -1,3 +1,5 @@
+#!csx.exe -s
+
 global main
 
 extern bsearch, qsort
@@ -53,6 +55,13 @@ main:
     test qword ptr [rax + 24], 0
 	jnz .nonzero
     
+	; print no errors message
+	mov eax, sys_write
+	mov ebx, 2
+	mov rcx, no_err
+	mov edx, no_err.len
+	syscall
+	
 	xor eax, eax
     ret
 
@@ -143,3 +152,6 @@ nonzero_msg_len: equ $-nonzero_msg
 
 no_cmd_term_msg: db `\n\nNO COMMAND LINE ARG TERMINATOR!!\n\n`
 no_cmd_term_msg_len: equ $-no_cmd_term_msg
+
+no_err: db `no errors\n`
+.len: equ $-no_err

@@ -16,6 +16,13 @@ global abs, labs
 
 ; -------------------------------------------
 
+; these are global but you should never modify them.
+; should only by touched once by _start for initialization.
+
+global __malloc_beg, __malloc_end
+
+; -------------------------------------------
+
 extern isspace
 
 extern pow
@@ -408,8 +415,8 @@ malloc:
     mov rdi, rax
     
     ; get the beg/end positions
-    mov rsi, [malloc_beg]
-    mov r8, [malloc_end]
+    mov rsi, [__malloc_beg]
+    mov r8,  [__malloc_end]
     ; if beg was nonzero, we're good
     cmp rsi, 0
     jnz .ok
@@ -423,8 +430,8 @@ malloc:
     mov rdi, rax
     mov esi, 8
     call _align
-    mov [malloc_beg], rax
-    mov [malloc_end], rax
+    mov [__malloc_beg], rax
+    mov [__malloc_end], rax
     mov rsi, rax
     mov r8, rax
     mov rdi, r11
@@ -490,7 +497,7 @@ malloc:
     
     ; -- if we got here, we went out of range of the malloc field -- ;
     
-    ; put position to add block in r8 (overwrite prev if not in use, otherwise malloc_end)
+    ; put position to add block in r8 (overwrite prev if not in use, otherwise __malloc_end)
     cmp r12, 0
     jz .begin_add
     mov rax, [r12]
@@ -511,7 +518,7 @@ malloc:
     
     .enough_space:
     ; we have enough space - create the new block on the end (occupied)
-    mov [malloc_end], r10
+    mov [__malloc_end], r10
     or r10b, 1
     mov [r8], r10
     mov [r8 + 8], r12
@@ -613,8 +620,8 @@ realloc:
     mova rcx, rsi
     
     ; we're going down the route of needing a new array
-    ; if next is malloc_end, we can still do it in-place
-    cmp rbx, [malloc_end]
+    ; if next is __malloc_end, we can still do it in-place
+    cmp rbx, [__malloc_end]
     jne .new_array
     
     mov eax, sys_brk
@@ -622,12 +629,12 @@ realloc:
     syscall             ; current break point in rax
     lea r8, [rdi + rsi] ; break point needed in r8 (this is why we aligned size earlier)
     
-    ; if we have enough room, just move malloc_end
+    ; if we have enough room, just move __malloc_end
     cmp r8, rax
     ja .more_mem
     
     .good_mem:
-    mov [malloc_end], r8
+    mov [__malloc_end], r8
     or r8b, 1
     mov [rdi - 16], r8
     mov rax, rdi
@@ -698,7 +705,7 @@ free:
     mov rdx, [rdi]
     and dl, ~1
     ; if next is in range and not in use, get next->next in rdx (we'll merge right)
-    cmp rdx, [malloc_end]
+    cmp rdx, [__malloc_end]
     jae .nomerge_right
     mov rcx, [rdx]
     bt rcx, 0
@@ -897,8 +904,8 @@ atexit_len: resd 1 ; number of items in the atexit_dat array
 atexit_cap: resd 1 ; capacity of atexit_dat array
 
 align 8
-malloc_beg: resq 1 ; starting address for malloc
-malloc_end: resq 1 ; stopping address for malloc
+__malloc_beg: resq 1 ; starting address for malloc
+__malloc_end: resq 1 ; stopping address for malloc
 
 align 8
 qtemp: resq 1 ; 64-bit temporary

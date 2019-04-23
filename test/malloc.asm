@@ -1,3 +1,5 @@
+#!csx.exe -s
+
 global main
 
 extern atexit
@@ -21,18 +23,19 @@ print2:
     ret
 
 main:
-    debug_cpu
-    ret
-    
-    movdqa xmm0, [vec_a]
-    movdqa xmm1, [vec_b]
-    pmullw xmm2, xmm0, xmm1
-    debug_vpu
-    ret
-    
+	mov r15, rbp
+	mov eax, sys_brk
+	mov ebx, 0x800000
+	syscall
+	;nop
+	mov eax, sys_brk
+	xor ebx, ebx
+	syscall
+	mov r14, rax
+	
     mov rdi, 1
     call malloc
-    ;debug_cpu
+    debug_cpu
     mov rdi, rax
     call free
     

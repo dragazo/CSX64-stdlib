@@ -1,3 +1,5 @@
+#!csx.exe -s
+
 global main
 
 stdin:  equ 0
