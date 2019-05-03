@@ -23,20 +23,21 @@ do
         continue
     fi
     
-    # empty its stdlib folder of any object files (or create it)
+    # remove target's stdlib folder (if it exists)
     if [ -d "$1/stdlib" ]
     then
-        find "$1/stdlib" -name "*.o" | xargs -i rm "{}"
-    else
-        mkdir "$1/stdlib"
+        rm -r "$1/stdlib"
     fi
     
-    # ---------------------------
-    
-    # assemble _start
-    "$1/$exe" "$root/_start.asm" -ao "$1/_start.o"
-    # assemble stdlib
-    find "$root/stdlib" -name "*.asm" | xargs -i basename -s ".asm" "{}" | xargs -i "$1/$exe" "$root/stdlib/{}.asm" -ao "$1/stdlib/{}.o"
+	# copy over asm files
+	cp "$root/_start.asm" "$1/."
+	cp -r "$root/stdlib" "$1/."
+	
+	# assemble them into object files
+	"$1/$exe" -a _start.asm stdlib/*.asm
+	
+	# remove the assembly files
+	rm "$1/_start.asm" "$1/stdlib"/*.asm
     
 	shift
 done
