@@ -8,6 +8,8 @@ extern memset, memchr
 
 extern malloc, calloc, free, realloc
 
+extern puts, fputs, stderr, stdout
+
 segment .text
 
 main:
@@ -56,33 +58,26 @@ main:
 	jnz .nonzero
     
 	; print no errors message
-	mov eax, sys_write
-	mov ebx, 2
-	mov rcx, no_err
-	mov edx, no_err.len
-	syscall
+	mov edi, no_err
+	call puts
 	
 	xor eax, eax
     ret
 
 .bad_args:
 
-    mov eax, sys_write
-    mov ebx, 2
-    mov ecx, no_cmd_term_msg
-    mov edx, no_cmd_term_msg_len
-    syscall
+    mov edi, no_cmd_term_msg
+	mov esi, stderr
+    call fputs
 
 	mov eax, 24
     ret
 	
 .bad_malloc:
 
-    mov eax, sys_write
-    mov ebx, 2
-    mov ecx, bad_malloc_msg
-    mov edx, bad_malloc_msg_len
-    syscall
+    mov edi, bad_malloc_msg
+    mov esi, stderr
+    call fputs
 
 	mov eax, 1
     ret
@@ -91,67 +86,76 @@ main:
 
 	debug_cpu
 	
-	mov eax, sys_write
-	mov ebx, 2
-	mov ecx, unaligned_msg
-	mov edx, unaligned_msg_len
-	syscall
+	mov edi, unaligned_msg
+	mov esi, stderr
+	call fputs
 	
 	mov eax, 2
 	ret
 	
 .bad_calloc:
 
-    mov eax, sys_write
-    mov ebx, 2
-    mov ecx, bad_calloc_msg
-    mov edx, bad_calloc_msg_len
-    syscall
+    mov edi, bad_calloc_msg
+    mov esi, stderr
+    call fputs
 
 	mov eax, 3
     ret
 
 .diff_block:
 
-    mov eax, sys_write
-    mov ebx, 2
-    mov ecx, diff_block_msg
-    mov edx, diff_block_msg_len
-    syscall
+    mov edi, diff_block_msg
+    mov esi, stderr
+    call fputs
 
 	mov eax, 4
     ret
 
 .nonzero:
 
-	mov eax, sys_write
-	mov ebx, 2
-	mov ecx, nonzero_msg
-	mov edx, nonzero_msg_len
-	syscall
+	mov edi, nonzero_msg
+	mov esi, stderr
+	call fputs
 	
 	mov eax, 5
 	ret
 	
 segment .rodata
 
-bad_malloc_msg: db `\n\nMALLOC RETURNED NULL!!\n\n`
-bad_malloc_msg_len: equ $-bad_malloc_msg
+t_count: equ 24 ; number of times to repeat times
 
-unaligned_msg: db `\n\nMALLOC RETURNED AN UNALIGNED ADDRESS!!\n\n`
-unaligned_msg_len: equ $-unaligned_msg
+t_prefix: db 77
+t_body: times t_count db 21
+t_suffix: db 88
 
-bad_calloc_msg: db `\n\nCALLOC RETURNED NULL!!\n\n`
-bad_calloc_msg_len: equ $-bad_calloc_msg
+; make sure the times prefix behaved properly (also tests that static_assert works)
+static_assert t_suffix-t_body == t_count, "TIMES count error"
+static_assert (   ((t_suffix-t_body)   )) == t_count, "TIMES count error"
+static_assert t_suffix-t_body == t_count
 
-diff_block_msg: db `\n\nMALLOC/CALLOC GAVE DIFFERENT DATA BLOCKS!!\n\n`
-diff_block_msg_len: equ $-diff_block_msg
+static_assert t_body - t_prefix == 1
+static_assert 3.14
 
-nonzero_msg: db `\n\nCALLOC DID NOT ZERO RETURNED MEMORY!!\n\n`
-nonzero_msg_len: equ $-nonzero_msg
+if_test1: if -16 equ 7
+if_test1: if  0  equ 3
+static_assert if_test1 == 7
+static_assert if_test1 != 3
 
-no_cmd_term_msg: db `\n\nNO COMMAND LINE ARG TERMINATOR!!\n\n`
-no_cmd_term_msg_len: equ $-no_cmd_term_msg
+if_test2: if   0   equ 74
+if_test2: if -54.4 equ 79
+static_assert if_test2 != 74
+static_assert if_test2 == 79
 
-no_err: db `no errors\n`
-.len: equ $-no_err
+bad_malloc_msg: db `\n\nMALLOC RETURNED NULL!!\n\n`, 0
+
+unaligned_msg: db `\n\nMALLOC RETURNED AN UNALIGNED ADDRESS!!\n\n`, 0
+
+bad_calloc_msg: db `\n\nCALLOC RETURNED NULL!!\n\n`, 0
+
+diff_block_msg: db `\n\nMALLOC/CALLOC GAVE DIFFERENT DATA BLOCKS!!\n\n`, 0
+
+nonzero_msg: db `\n\nCALLOC DID NOT ZERO RETURNED MEMORY!!\n\n`, 0
+
+no_cmd_term_msg: db `\n\nNO COMMAND LINE ARG TERMINATOR!!\n\n`, 0
+
+no_err: db `no errors\n`, 0
