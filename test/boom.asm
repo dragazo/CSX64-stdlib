@@ -57,6 +57,10 @@ main:
     test qword ptr [rax + 24], 0
 	jnz .nonzero
     
+	; print the alphabet
+	mov edi, alphabet
+	call puts
+	
 	; print no errors message
 	mov edi, no_err
 	call puts
@@ -145,6 +149,13 @@ if_test2: if   0   equ 74
 if_test2: if -54.4 equ 79
 static_assert if_test2 != 74
 static_assert if_test2 == 79
+
+; create a C string of AaBb...Zz012...9 using TIMES index unrolling
+alphabet:
+	times 26 db 'A'+$i, 'a'+$i
+	times 10 db '0'+$i
+	db 10, 0
+static_assert $-alphabet == 26 * 2 + 10 + 2
 
 bad_malloc_msg: db `\n\nMALLOC RETURNED NULL!!\n\n`, 0
 
