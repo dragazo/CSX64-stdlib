@@ -61,6 +61,10 @@ main:
 	mov edi, alphabet
 	call puts
 	
+	; print the incbin message
+	mov edi, incbinmsg
+	call puts
+	
 	; print no errors message
 	mov edi, no_err
 	call puts
@@ -156,6 +160,11 @@ alphabet:
 	times 10 db '0'+$i
 	db 10, 0
 static_assert $-alphabet == 26 * 2 + 10 + 2
+
+incbinmsg:
+	db "incbin msg: "
+	incbin "msg.txt"
+	db 0
 
 bad_malloc_msg: db `\n\nMALLOC RETURNED NULL!!\n\n`, 0
 
