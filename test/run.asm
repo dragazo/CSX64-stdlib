@@ -13,7 +13,7 @@ extern malloc, calloc, free, realloc
 
 global __read_arr
 
-prefix_stuff_dont_call_this:
+prefix_stuff_dont_call_this: ; (it assembling errorlessly is the test case)
 	mfence
 	sfence
 	lfence
@@ -50,7 +50,9 @@ dump:
     stos byte ptr [4024]
     lods eax
     ret
-    mov rax, [rsp*5]
+	
+	
+    mov rax, [rsp*5] ; just to ensure this compiles
 
 ; compares 32-bit integers passed by address
 cmp_int:
@@ -98,7 +100,9 @@ __read_arr:
     align 64
     fa: dq 0.0/0.1
     fb: dq 0/0.1
-    
+	
+	
+	
     _sqrt_val: equ 10.0
     _dsqrt: dq _sqrt_val
     _fsqrt: dd _sqrt_val
