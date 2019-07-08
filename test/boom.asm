@@ -152,11 +152,11 @@ static_assert if_test1 != 3
 if_test2: if   0   equ 74
 if_test2: if -54.4 equ 79
 static_assert if_test2 != 74
-static_assert if_test2 == 79
+static_assert if_test2 == 79   
 
 ; create a C string of AaBb...Zz012...9 using TIMES index unrolling
 alphabet:
-	times 26 db 'A'+$i, 'a'+$i
+	times 26 db 'A'+$i, 'a'+$I   
 	times 10 db '0'+$i
 	db 10, 0
 static_assert $-alphabet == 26 * 2 + 10 + 2
@@ -176,35 +176,45 @@ trunc: equ 3
 repr64: equ 4.6
 repr32: equ -45.3
 float64: equ 3
-float32: equ -256
-prec64: equ 56.4
-prec32: equ -43
-	
+float32: equ -(256)
+prec64: equ (56.4)
+prec32: equ (-43)
+
+static_assert "hello" == $int("hello")
+static_assert "(())" == $int  (  "(())"  )
+static_assert "))((" == ( ($int( "))((")))
+static_assert "((((" == (($int ("((((" ) ))
+static_assert "))))" == ($int ("))))"))
+
+static_assert 12 == $int(1_2)	
+static_assert 12 == $int(1_2_)	
+static_assert 12 == $int(1__2_)	
+
 ; test function-like-operator syntax parsing
-static_assert int(12.45) == int(12)
-static_assert int(12.99) == 12
+static_assert $int(12.45) == $int(1_2)
+static_assert $int( 12.99) == 12
 
-static_assert float(13) == float(13.0)
-static_assert float(13.2) == 13.2
+static_assert $float(13) == $float(13.0)
+static_assert $float   (13.2) == 13.2
 
-static_assert floor(12.45) == 12.0
-static_assert floor(-12.45) == -13.0
+static_assert $floor(12.45) == 12.0
+static_assert $floor ( -   12.45 ) == - 13.0
 
-static_assert ceil(12.45) == 13.0
-static_assert ceil(-12.45) == -12.0
+static_assert $ceil  (  12.45) == 13.0
+static_assert $ceil(-12.45) == -12.0
 
-static_assert round(12.45) == 12.0
-static_assert round(12.55) == 13.0
+static_assert $round (12.45  ) == 12.0
+static_assert $round(12.55) == 13.0
 
-static_assert trunc(12.45) == 12.0
-static_assert trunc(12.95) == 12.0
+static_assert $trunc( 12.45) == 12.0
+static_assert $trunc(12.95) == 12.0
 
 ; test special float to int representation functions
-static_assert repr64(2.718281828459045235360) == 0x4005bf0a8b145769
-static_assert repr32(2.718281828459045235360) == 0x402df854
+static_assert $repr64(2.718281828459045235360) == 0x4005bf0a8b145769
+static_assert $REPR32(2.718281828459045235360) == 0x402df854
 ; tests going back the other way (accounting for precision loss)
-static_assert float64(0x4005bf0a8b145769) == prec64(2.718281828459045235360)
-static_assert float32(0x402df854)         == prec32(2.718281828459045235360)
+static_assert $float64(0x4005bf0a8b145769) == $prec64(2.718281828459045235360)
+static_assert $FLOAT32(0x402df854)         == $prec32(2.718281828459045235360)
 	
 bad_malloc_msg: db `\n\nMALLOC RETURNED NULL!!\n\n`, 0
 
