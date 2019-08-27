@@ -13,6 +13,10 @@ global fputs, puts
 
 ; --------------------------------------
 
+global fopen, fflush, fclose
+
+; --------------------------------------
+
 extern malloc, free
 extern strlen
 
@@ -20,15 +24,12 @@ extern strlen
 
 segment .text
 
-; struct FILE {
-;     int fd;
-;     
-; };
-
 FILE:
-	.align: equ 8
-	; begin fields
-	.fd:    equ 0
+	.ALIGN:  equ 4
+	.SIZE:   equ 8
+	
+	.fd:     equ 0 ; int
+	.static: equ 4 ; int (bool)
 	
 ; int fputc(int ch, FILE *stream)
 ; int putc(int ch, FILE *stream)
@@ -104,18 +105,130 @@ fwrite:
     
 ; --------------------------------------
 
+; FILE *fopen(const char *filename, const char *mode)
+fopen:
+	mov al, 0 ; + flag
+	mov bl, 0 ; b flag
+
+	mov r8, rsi
+	jmp .loop_tst
+	.loop_top:
+		cmp dl, '+'
+		move al, 1
+		cmp dl, 'b'
+		move bl, 1
+	.loop_aft:
+		inc r8
+	.loop_tst:
+		mov dl, [r8]
+		cmp dl, 0
+		jne .loop_top
+	
+	xor r8, r8 ; flags
+	
+	mov dl, [rsi]
+	cmp dl, 'r' ; if reading
+	je .reading
+	cmp dl, 'w' ; if writing
+	je .writing
+	cmp dl, 'a' ; if appending
+	je .appending
+	xor rax, rax ; otherwise invalid mode
+	ret
+
+	.reading:
+	cmp al, 0
+	movz  r8, O_RDONLY
+	movnz r8, O_RDWR
+	jmp .finish
+	
+	.writing:
+	cmp al, 0
+	movz  r8, O_CREAT | O_WRONLY | O_TRUNC
+	movnz r8, O_CREAT | O_RDWR   | O_TRUNC
+	jmp .finish
+	
+	.appending:
+	cmp al, 0
+	movz  r8, O_CREAT | O_WRONLY | O_APPEND
+	movnz r8, O_CREAT | O_RDWR   | O_APPEND
+	
+	.finish:
+	; call native open
+	mov eax, sys_open
+	mov rbx, rdi
+	mov rcx, r8
+	syscall
+	; if it fails, return null
+	cmp eax, -1
+	jne .success
+	xor rax, rax
+	ret
+	.success:
+	
+	push eax ; save the fd
+	
+	; allocate the FILE object
+	mov rdi, FILE.SIZE
+	call malloc
+	; if it fails, return null
+	cmp rax, 0
+	jne .success_2
+	xor rax, rax
+	ret
+	.success_2:
+	
+	; initialize the FILE object
+	pop dword ptr [rax + FILE.fd] ; restore the fd
+	mov dword ptr [rax + FILE.static], 0 ; set as not static (will pass to free())
+	
+	; return address of the FILE object
+	ret
+	
+; int fclose(FILE *stream)
+fclose:
+	call fflush ; flush the stream
+	
+	; invoke native close
+	mov eax, sys_close
+	mov ebx, dword ptr [rdi + FILE.fd]
+	syscall
+	push eax ; save native close result
+	
+	; if non-static, free the FILE object
+	cmp dword ptr [rdi + FILE.static], 0
+	jnz .done
+	call free ; free the FILE object
+	.done:
+	
+	pop eax ; return native close result
+	ret
+
+; int fflush(FILE *stream)
+fflush:
+	xor eax, eax ; CSX64 does this for us, so no need to buffer
+	ret
+	
+; --------------------------------------
+
 segment .data
 
 EOF: equ -1
 
-align FILE.align
+align FILE.ALIGN
 stdin:
 	dd 0 ; fd
+	dd 1 ; static
+static_assert $-stdin == FILE.SIZE
 
-align FILE.align
+align FILE.ALIGN
 stdout:
 	dd 1 ; fd
+	dd 1 ; static
+static_assert $-stdout == FILE.SIZE
 	
-align FILE.align
+align FILE.ALIGN
 stderr:
 	dd 2 ; fd
+	dd 1 ; static
+static_assert $-stderr == FILE.SIZE
