@@ -8,8 +8,17 @@ global stdin, stdout, stderr
 
 ; --------------------------------------
 
+global remove, rename
+
+; --------------------------------------
+
 global fputc, putc, putchar
 global fputs, puts
+global fwrite
+
+; --------------------------------------
+
+global ungetc, fgetc, fpeek
 
 ; --------------------------------------
 
@@ -24,13 +33,38 @@ extern strlen
 
 segment .text
 
+EOF: equ -1
+
 FILE:
-	.ALIGN:  equ 4
-	.SIZE:   equ 8
+	.ALIGN:     equ 4
+	.SIZE:      equ 12
 	
-	.fd:     equ 0 ; int
-	.static: equ 4 ; int (bool)
+	.fd:        equ 0 ; int (connected (open) file descriptor from native platform)
+	.ungetc_ch: equ 4 ; int (character put back into stream by ungetc - only 1 allowed- EOF (-1) for none)
+	.static:    equ 8 ; int (bool flag marking as static object (no free()) - e.g. stdout)
+
+; --------------------------------------
+
+; int remove(const char *path);
+remove:
+    mov eax, sys_unlink
+    mov rbx, rdi
+    syscall
+    ret
+
+; int rename(const char *from, const char *to);
+rename:
+    mov eax, sys_rename
+    mov rbx, rdi
+    mov rcx, rsi
+    syscall
+    ret
 	
+; --------------------------------------
+
+; int putchar(int ch)
+putchar:
+	mov rsi, stdout
 ; int fputc(int ch, FILE *stream)
 ; int putc(int ch, FILE *stream)
 fputc:
@@ -48,13 +82,12 @@ putc:
 	; if that failed (-1), return EOF (-1), otherwise the written char
 	cmp rax, -1
 	movne eax, edi
+	static_assert EOF == -1 ; we're using this fact to avoid a mov
 	ret
-; int putchar(int ch)
-putchar:
+
+; int puts(const char *str)
+puts:
 	mov rsi, stdout
-	call fputc
-	ret
-	
 ; int fputs(const char *str, FILE *stream)
 fputs:
 	; save the arguments
@@ -72,13 +105,8 @@ fputs:
 	pop rcx
 	syscall
 	
-	ret
-; int puts(const char *str)
-puts:
-	mov rsi, stdout
-	call fputs
-	ret
-
+	ret ; return the number of characters written (returned from native call)
+	
 ; size_t fwrite(const void *ptr, size_t size, size_t count, FILE *stream)
 fwrite:
 	; if size or count is zero, no-op
@@ -94,7 +122,7 @@ fwrite:
 	imul rdx, rsi
 	syscall
 	
-	; return number of successes
+	; return number of successes (rax holds number of bytes written from native call)
 	xor rdx, rdx
 	div rsi ; quotient stored in rax
 	ret
@@ -102,7 +130,49 @@ fwrite:
 	.nop: ; nop case returns zero and does nothing else
 	xor rax, rax
 	ret
-    
+
+; --------------------------------------
+
+; int ungetc(int character, FILE *stream)
+ungetc:
+	mov dword ptr [rsi + FILE.ungetc_ch], edi ; discard old ungetc_ch if present
+	mov eax, edi ; return the character
+	ret
+
+; int fgetc(FILE *stream)
+fgetc:
+	mov eax, dword ptr [rdi + FILE.ungetc_ch]
+	cmp eax, EOF
+	je .fetch_ungetc_ch ; if there's an unget char, get that
+	
+	; otherwise read a character from the stream (native buffers for us)
+	mov eax, sys_read
+	mov ebx, dword ptr [rdi + FILE.fd]
+	lea rcx, byte ptr [rsp - 1] ; place the read character on the stack (red zone)
+	mov edx, 1
+	syscall
+	
+	; if that failed, return EOF
+	cmp rax, 0
+	jz .fail
+	; otherwise return the read character
+	mov al, byte ptr [rsp - 1]
+	ret
+	
+	.fail:
+	mov eax, EOF
+	ret
+	
+	.fetch_ungetc_ch:
+	mov dword ptr [rdi + FILE.ungetc_ch], EOF ; mark ungetc char as eof (none)
+	ret ; and return the old ungetc char value
+
+; int fpeek(FILE *stream) -- nonstandard convenience function
+fpeek:
+	call fgetc
+	mov edi, eax
+	jmp ungetc
+
 ; --------------------------------------
 
 ; FILE *fopen(const char *filename, const char *mode)
@@ -213,22 +283,23 @@ fflush:
 
 segment .data
 
-EOF: equ -1
-
 align FILE.ALIGN
 stdin:
-	dd 0 ; fd
-	dd 1 ; static
+	dd 0   ; fd
+	dd EOF ; ungetc_ch
+	dd 1   ; static
 static_assert $-stdin == FILE.SIZE
 
 align FILE.ALIGN
 stdout:
-	dd 1 ; fd
-	dd 1 ; static
+	dd 1   ; fd
+	dd EOF ; ungetc_ch
+	dd 1   ; static
 static_assert $-stdout == FILE.SIZE
 	
 align FILE.ALIGN
 stderr:
-	dd 2 ; fd
-	dd 1 ; static
+	dd 2   ; fd
+	dd EOF ; ungetc_ch
+	dd 1   ; static
 static_assert $-stderr == FILE.SIZE
