@@ -12,15 +12,23 @@ extern stdin, stdout, stderr
 
 segment .text
 
+; intern testing
+mov rdi, $str("file is not ")
+mov rdi, $str("file is not empty")
+mov rdi, $str(" is not empty")
+mov rdi, $str("is not empty")
+mov rdi, $str("pty")
+mov rdi, $str("g file is not empty")
+
 main:
 	; make sure we can open the file
 	mov rdi, path
-	mov rsi, write_mode
+	mov rsi, $str("wb")
 	call fopen
 	; make sure it succeeds
 	cmp rax, 0
 	jnz .success_1
-	mov rdi, open_err_msg_1
+	mov rdi, $str('failed', 'to',"open" , 'f', `ile (`,'1'+0,`)`)
 	call puts
 	mov eax, 1
 	ret
@@ -34,7 +42,7 @@ main:
 	call fputs
 	cmp eax, content.len
 	je .write_good
-	mov rdi, write_failure
+	mov rdi, $str("failed to write the content")
 	mov rsi, stderr
 	call fputs
 	mov eax, -404
@@ -47,7 +55,7 @@ main:
 	; make sure it succeeds
 	cmp rax, 0
 	jz .success_2
-	mov rdi, close_err_msg_1
+	mov rdi, $bin("failed to close file (1)", 0)
 	call puts
 	mov eax, 2
 	ret
@@ -55,12 +63,12 @@ main:
 	
 	; make sure we can open the file again
 	mov rdi, path
-	mov rsi, read_mode
+	mov rsi, $STR("rb")
 	call fopen
 	; make sure it succeeds
 	cmp rax, 0
 	jnz .success_3
-	mov rdi, open_err_msg_2
+	mov rdi, $BIN("failed to open file (2)", +--+0x00)
 	call puts
 	mov eax, 1
 	ret
@@ -78,7 +86,7 @@ main:
 	
 	cmp r14, r15
 	je .no_leak
-	mov rdi, memory_leak_msg
+	mov rdi, $str("memory leak: file was not in expected location")
 	call puts
 	mov eax, -1044
 	ret
@@ -90,7 +98,7 @@ main:
 	; make sure it succeeds
 	cmp rax, 0
 	jz .success_4
-	mov rdi, close_err_msg_2
+	mov rdi, $str("failed to close file (2)")
 	call puts
 	mov eax, 2
 	ret
@@ -101,7 +109,7 @@ main:
 	call remove
 	cmp eax, 0
 	jz .was_deleted
-	mov rdi, delete_failure
+	mov rdi, $str("failed to delete the file")
 	mov rsi, stderr
 	call fputs
 	mov eax, 12345
@@ -113,7 +121,7 @@ main:
 	call remove
 	cmp eax, 0
 	jnz .still_existed_after_delete
-	mov rdi, still_existed
+	mov rdi, $str("file was deleted but still exists")
 	mov rsi, stderr
 	call fputs
 	mov eax, -67451
@@ -122,11 +130,11 @@ main:
 	
 	; and at this point opening the file in read mode should fail
 	mov rdi, path
-	mov rsi, read_mode
+	mov rsi, $str('rb')
 	call fopen
 	cmp eax, 0
 	jz .successfully_failed_to_open
-	mov rdi, open_read_file_that_didnt_exist
+	mov rdi, $str("somehow opened a file for reading that didn't exist")
 	mov rsi, stderr
 	call fputs
 	mov eax, -666
@@ -151,7 +159,7 @@ assert_empty:
 	cmp eax, EOF
 	je .good
 	
-	mov rdi, not_empty_msg
+	mov rdi, $str("file is not empty")
 	mov rsi, stderr
 	call fputs
 	mov eax, 1
@@ -179,7 +187,7 @@ assert_content:
 		; if that was EOF the file is missing content
 		cmp eax, EOF
 		jne .good
-		mov rdi, missing_content_msg
+		mov rdi, $str("file missing content")
 		mov rsi, stderr
 		call fputs
 		pop r15
@@ -198,7 +206,7 @@ assert_content:
 	call fgetc
 	cmp eax, EOF
 	je .now_empty
-	mov rdi, extra_content_msg
+	mov rdi, $str("file had extra content")
 	mov rsi, stderr
 	call fputs
 	pop r15
@@ -215,31 +223,10 @@ assert_content:
 	
 segment .rodata
 
-path: db "temp_files_test.txt", 0
-read_mode: db "rb", 0
-write_mode: db "wb", 0
+path: equ $str("temp_files_test.txt")
 
 content: db `this is the content\nof the file\nthat should be written\n\n...\n`, 0
 .len: equ $-content-1
-
-open_err_msg_1: db "failed to open file (1)", 0
-close_err_msg_1: db "failed to close file (1)", 0
-open_err_msg_2: db "failed to open file (2)", 0
-close_err_msg_2: db "failed to close file (2)", 0
-
-memory_leak_msg: db "memory leak: file was not in expected location", 0
-
-not_empty_msg: db "file is not empty", 0
-
-missing_content_msg: db "file missing content", 0
-extra_content_msg: db "file had extra content", 0
-
-write_failure: db "failed to write the content", 0
-
-delete_failure: db "failed to delete the file", 0
-still_existed: db "file was deleted but still exists", 0
-
-open_read_file_that_didnt_exist: db "somehow opened a file for reading that didn't exist", 0
 
 segment .bss
 

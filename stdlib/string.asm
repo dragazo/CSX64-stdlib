@@ -506,7 +506,7 @@ memset:
 ; const char *strerror(int errnum);
 strerror:
     ; return PLACEHOLDER
-    mov rax, errno_NOTIMPLEMENTED
+    mov rax, $str("errno_NOTIMPLEMENTED")
     ret
     
 ; size_t strlen(const char *str);
@@ -526,8 +526,4 @@ strlen:
     sub rax, r8
     ret
 
-; --------------------------
-    
-segment .rodata
-
-errno_NOTIMPLEMENTED: db "ERRNO NOT IMPLEMENTED YET", 0
+	

@@ -38,7 +38,7 @@ main:
         
         ; new line
         mov rax, sys_write
-        mov rcx, new_line
+        mov rcx, $bin(`\n`)
         mov rdx, 1
         syscall
         
@@ -54,7 +54,3 @@ main:
     pop r15
     pop r14
     ret
-
-segment .rodata
-
-new_line: db 10

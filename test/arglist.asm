@@ -55,15 +55,15 @@ printer:
 	
 main:
 	mov rdi, 10
-	mov rsi, msg1
-	mov rdx, msg2
-	mov rcx, msg3
+	mov rsi, $str(`line 1\n`)
+	mov rdx, $str(`line 2\n`)
+	mov rcx, $str(`line 3\n`)
 	mov r8, msg4
 	mov r9, msg5
 	push qword msg10
 	push qword msg9
-	push qword msg8
-	push qword msg7
+	push qword $str(`line 8\n`)
+	push qword $str(`line 7\n`)
 	push qword msg6
 	mov al, 0
     call printer
@@ -76,13 +76,9 @@ segment .rodata
 
 static_assert `\0` == 0
 
-msg1: db `line 1\n\0`
-msg2: db `line 2\n\0`
-msg3: db `line 3\n\0`
 msg4: db `line 4\n\0`
 msg5: db `line 5\n\0`
 msg6: db `line 6\n\0`
-msg7: db `line 7\n\0`
-msg8: db `line 8\n\0`
+
 msg9: db `line 9\n\0`
 msg10: db `line 10\n\0`
