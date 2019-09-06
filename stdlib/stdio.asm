@@ -28,7 +28,8 @@ global fopen, fflush, fclose
 ; --------------------------------------
 
 extern arglist_start, arglist_end
-extern arglist_i64, arglist_f64
+extern arglist_i64, arglist_i32, arglist_i16, arglist_i8
+extern arglist_f64, arglist_f32
 
 extern malloc, free
 extern strlen
@@ -149,7 +150,7 @@ __printf_u64_decimal:
 	sub rsp, 21 ; we need 21 characters to hold the full (decimal) range of u64 (20 digits + terminator)
 	lea r8, [rsp + 20] ; r8 points to the start of the string
 	mov byte ptr [r8], 0 ; place a terminator at end of string
-	mov rax, rsi ; put the value in rax for division
+	mov rax, rdi ; put the value in rax for division
 	mov r9d, 10 ; r9 holds the base (10) to divide by (DIV doesn't accept imm)
 	
 	.loop_top:
@@ -172,7 +173,7 @@ __printf_u64_decimal:
 ; u64 __printf_i64_decimal(i64 val)
 ; prints the (signed) value and returns the number of characters written to the stream
 __printf_i64_decimal:
-	cmp rsi, 0
+	cmp rdi, 0
 	jl .negative
 	jmp __printf_u64_decimal ; if not negative, just treat it as unsigned
 	
@@ -220,28 +221,28 @@ __vprintf:
 		jz .loop_brk ; if it's a terminator, just break from the loop
 		
 		cmp al, 'd'
-		je .i64_decimal
+		je .i32_decimal
 		cmp al, 'i'
-		je .i64_decimal
+		je .i32_decimal
 		cmp al, 'u'
-		je .u64_decimal
+		je .u32_decimal
 		jmp .loop_aft ; if we don't recognize the format flag, just skip it
 		
-		.u64_decimal:
+		.u32_decimal:
 		call .__FLUSH_BUFFER ; flush the buffer before we do the formatted output
 		mov rdi, qword ptr [rsp + 8] ; load the arglist
-		call arglist_i64 ; get the next int arg
-		mov rdi, rax
+		call arglist_i32 ; get the next int arg
+		mov edi, eax ; put in rdi (implicitly zero extended)
 		call __printf_u64_decimal ; print it (unsigned) (decimal)
 		add r13, rax ; update total printed chars
 		xor rdi, rdi ; reset the buffer after formatted output
 		jmp .loop_aft
 		
-		.i64_decimal:
+		.i32_decimal:
 		call .__FLUSH_BUFFER ; flush the buffer before we do the formatted output
 		mov rdi, qword ptr [rsp + 8] ; load the arglist
-		call arglist_i64 ; get the next int arg
-		mov rdi, rax
+		call arglist_i32 ; get the next int arg
+		movsx rdi, eax
 		call __printf_i64_decimal ; print it (signed) (decimal)
 		add r13, rax ; update total printed chars
 		xor rdi, rdi ; reset the buffer after formatted output

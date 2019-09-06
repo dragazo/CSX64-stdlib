@@ -2,7 +2,8 @@
 ; this is nonstandard and just serves as convenience for CSX64 programs
 
 global arglist_start, arglist_end
-global arglist_i64, arglist_f64
+global arglist_i64, arglist_i32, arglist_i16, arglist_i8
+global arglist_f64, arglist_f32
 
 segment .text
 
@@ -117,6 +118,48 @@ arglist_i64:
 	mov rax, qword ptr [rax]
 	add qword ptr [rdi + arglist.stack_pos], 8
 	ret
+arglist_i32:
+	mov ecx, dword ptr [rdi + arglist.reg_index]
+	cmp ecx, 6
+	jae .get_from_stack
+	
+	mov eax, dword ptr [rdi + arglist.reg_arr + rcx*8]
+	inc dword ptr [rdi + arglist.reg_index]
+	ret
+
+	.get_from_stack:
+	mov rax, qword ptr [rdi + arglist.stack_pos]
+	mov eax, dword ptr [rax]
+	add qword ptr [rdi + arglist.stack_pos], 4
+	ret
+arglist_i16:
+	mov ecx, dword ptr [rdi + arglist.reg_index]
+	cmp ecx, 6
+	jae .get_from_stack
+	
+	mov ax, word ptr [rdi + arglist.reg_arr + rcx*8]
+	inc dword ptr [rdi + arglist.reg_index]
+	ret
+
+	.get_from_stack:
+	mov rax, qword ptr [rdi + arglist.stack_pos]
+	mov ax, word ptr [rax]
+	add qword ptr [rdi + arglist.stack_pos], 2
+	ret
+arglist_i8:
+	mov ecx, dword ptr [rdi + arglist.reg_index]
+	cmp ecx, 6
+	jae .get_from_stack
+	
+	mov al, byte ptr [rdi + arglist.reg_arr + rcx*8]
+	inc dword ptr [rdi + arglist.reg_index]
+	ret
+
+	.get_from_stack:
+	mov rax, qword ptr [rdi + arglist.stack_pos]
+	mov al, byte ptr [rax]
+	inc qword ptr [rdi + arglist.stack_pos]
+	ret
 arglist_f64:
 	mov ecx, dword ptr [rdi + arglist.xmm_index]
 	cmp ecx, 8
@@ -131,4 +174,19 @@ arglist_f64:
 	mov rax, qword ptr [rdi + arglist.stack_pos]
 	movsd xmm0, qword ptr [rax]
 	add qword ptr [rdi + arglist.stack_pos], 8
+	ret
+arglist_f32:
+	mov ecx, dword ptr [rdi + arglist.xmm_index]
+	cmp ecx, 8
+	jae .get_from_stack
+	
+	shl rcx, 4 ; mult 16 (xmm_arr holds xmmwords)
+	movss xmm0, dword ptr [rdi + arglist.xmm_arr + rcx]
+	inc dword ptr [rdi + arglist.xmm_index]
+	ret
+
+	.get_from_stack:
+	mov rax, qword ptr [rdi + arglist.stack_pos]
+	movss xmm0, dword ptr [rax]
+	add qword ptr [rdi + arglist.stack_pos], 4
 	ret
