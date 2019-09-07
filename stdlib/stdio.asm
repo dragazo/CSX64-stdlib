@@ -15,7 +15,8 @@ global remove, rename
 global fputc, putc, putchar
 global fputs, puts
 global fwrite
-global fprintf
+global fprintf, vfprintf
+global printf, vprintf
 
 ; --------------------------------------
 
@@ -199,7 +200,9 @@ __printf_i64_decimal:
 __vprintf:
 	.BUF_CAP: equ 63 ; amount of buffer space to put on the stack for efficiency
 	.BUF_START: equ 32 ; starting position of stack buffer (also amount of space for storing registers)
-	sub rsp, .BUF_START + (.BUF_CAP+1) ; put args and call safe registers on the stack + buffer space
+	.TMP_SIZE: equ 8 ; size of temp space for storing intermediate values on the stack
+	.TMP_START: equ .BUF_START + (.BUF_CAP+1) ; starting position of temp space
+	sub rsp, .BUF_START + (.BUF_CAP+1) + .TMP_SIZE ; put args and call safe registers on the stack + buffer space
 	mov qword ptr [rsp + 0], rdi
 	mov qword ptr [rsp + 8], rsi
 	mov qword ptr [rsp + 16], r12 ; save call-safe register
@@ -226,6 +229,10 @@ __vprintf:
 		je .i32_decimal
 		cmp al, 'u'
 		je .u32_decimal
+		cmp al, 's'
+		je .string
+		cmp al, 'c'
+		je .char
 		jmp .loop_aft ; if we don't recognize the format flag, just skip it
 		
 		.u32_decimal:
@@ -248,14 +255,33 @@ __vprintf:
 		xor rdi, rdi ; reset the buffer after formatted output
 		jmp .loop_aft
 		
+		.string:
+		call .__FLUSH_BUFFER ; flush the buffer before we do the formatted output
+		mov rdi, qword ptr [rsp + 8] ; load the arglist
+		call arglist_i64 ; get the pointer (64-bit integer)
+		mov rdi, rax
+		call r15 ; print the string using the sprinter function
+		add r13, rax ; update total printed chars
+		xor rdi, rdi ; reset the buffer after formatted output
+		jmp .loop_aft
+		
+		.char:
+		mov qword ptr [rsp + .TMP_START], rdi ; save buffer size in tmp space
+		mov rdi, qword ptr [rsp + 8]          ; load the arglist
+		call arglist_i8                       ; get the character to print (8-bit integer) (now in al)
+		mov rdi, qword ptr [rsp + .TMP_START] ; reload the buffer size
+		
+		; FALL THROUGH INTENTIONAL
+		
 		.simple_char:
 		cmp rdi, .BUF_CAP
 		jb .simple_char_append ; if the buffer has space, just append
-		call .__FLUSH_BUFFER   ; otherwise flush the buffer
-		xor rdi, rdi           ; and reset it
-		mov al, byte ptr [r12] ; also reload the character since we might clobber it
+		mov byte ptr [rsp + .TMP_START], al ; otherwise store the character in tmp space (in case we clobber it)
+		call .__FLUSH_BUFFER                ; then flush the (full) buffer
+		xor rdi, rdi                        ; and reset it
+		mov al, byte ptr [rsp + .TMP_START] ; reload the character to append from tmp space
 		.simple_char_append:
-		mov byte ptr [rsp + .BUF_START + rdi], al ; append al to the buffer
+		mov byte ptr [rsp + .BUF_START + rdi], al ; append the character to the buffer
 		inc rdi ; and bump up buffer size
 	.loop_aft:
 		inc r12
@@ -268,7 +294,7 @@ __vprintf:
 	; perform one final buffer flush in case we had anything left in it
 	call .__FLUSH_BUFFER
 	
-	add rsp, .BUF_START + (.BUF_CAP+1) ; clean up stack space
+	add rsp, .BUF_START + (.BUF_CAP+1) + .TMP_SIZE ; clean up stack space
 	ret
 ; this is a pseudo-function to call which flushes buffer.
 ; the buffer must be reinitialized after this operation (e.g. after any functions calls).
@@ -318,6 +344,33 @@ fprintf:
 	pop rdi
 	pop rsi
 	call vfprintf
+	mov r15, rax
+	
+	pop rdi
+	call arglist_end
+	mov rax, r15
+	pop r15
+	ret
+
+; int vprintf(const char *fmt, arglist *args)
+vprintf:
+	mov rdx, rsi
+	mov rsi, rdi
+	mov rdi, stdout
+	jmp vfprintf
+; int printf(const char *fmt, ...)
+printf:
+	mov r10, rsp
+	push r15
+	call arglist_start
+	push rax
+	push rdi
+	mov rdi, rax
+	call arglist_i64
+	
+	mov rsi, rdi
+	pop rdi
+	call vprintf
 	mov r15, rax
 	
 	pop rdi
@@ -385,13 +438,13 @@ fopen:
 	.loop_aft:
 		inc r8
 	.loop_tst:
-		mov dl, [r8]
+		mov dl, byte ptr [r8]
 		cmp dl, 0
 		jne .loop_top
 	
 	xor r8, r8 ; flags
 	
-	mov dl, [rsi]
+	mov dl, byte ptr [rsi]
 	cmp dl, 'r' ; if reading
 	je .reading
 	cmp dl, 'w' ; if writing
