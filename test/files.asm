@@ -5,8 +5,9 @@ global main
 extern EOF
 extern puts, fputs
 extern fopen, fflush, fclose
-extern fgetc
+extern fgetc, fpeek
 extern remove
+extern fprintf
 
 extern stdin, stdout, stderr
 
@@ -141,6 +142,9 @@ main:
 	ret
 	.successfully_failed_to_open:
 	
+	mov rdi, $str("Succeeded all tests prior to closing standard streams")
+	call puts
+	
 	; make sure we can close all the standard streams
 	mov rdi, stdin
 	call fclose
@@ -178,6 +182,46 @@ assert_content:
 	mov r14, rdi ; store file address in r14
 	
 	xor r15, r15
+	jmp .peek_loop_test
+	.peek_loop_body:
+		; peek the next (first) char from file
+		mov rdi, r14
+		call fpeek
+		
+		; should not be EOF
+		cmp eax, EOF
+		jne .peek_good
+		mov rdi, $str("failed to peek a character from file")
+		mov rsi, stderr
+		call fputs
+		pop r15
+		pop r14
+		ret ; eax currently holds nonzero
+		.peek_good:
+		
+		; should be the first char from content string
+		movzx ebx, byte ptr [content]
+		cmp eax, ebx
+		je .peek_cmp_good
+		mov rdi, stderr
+		mov rsi, $str(`peeked char was wrong at peek iter %d: expected '%d' got '%d'\n`)
+		mov edx, r15d
+		movzx ecx, byte ptr [content]
+		mov r8d, eax
+		mov al, 0
+		call fprintf
+		pop r15
+		pop r14
+		ret ; eax currently holds nonzero
+		.peek_cmp_good:
+	.peek_loop_aft:
+		inc r15
+	.peek_loop_test:
+		cmp r15, 47 ; arbitrary loop count
+		jl .peek_loop_body
+		
+	
+	xor r15, r15
 	jmp .loop_tst
 	.loop_top:
 		; read the next char from file
@@ -194,6 +238,22 @@ assert_content:
 		pop r14
 		ret ; eax currently holds nonzero
 		.good:
+		
+		; make sure this byte is the expected value
+		cmp al, byte ptr [content + r15]
+		je .same
+		mov rdi, stderr
+		mov rsi, $str(`file differed from expected at byte %d: expected '%d' got '%d'\n`)
+		mov rdx, r15
+		movzx ecx, byte ptr [content + r15]
+		movzx r8d, al
+		mov al, 0
+		call fprintf
+		pop r15
+		pop r14
+		mov eax, 1 ; return nonzero
+		ret
+		.same:
 		
 	.loop_aft:
 		inc r15
