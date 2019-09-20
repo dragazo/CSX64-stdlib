@@ -2,13 +2,14 @@
 
 global main
 
-extern puts
+extern fputs, stdout
 
 segment .text
 
 main:
 	mov rdi, $str("what's your name? ")
-	call puts
+	mov rsi, stdout
+	call fputs
     
     mov rax, sys_read
     xor rbx, rbx
@@ -18,11 +19,14 @@ main:
     mov byte ptr [name + rax - 1], 0
     
 	mov rdi, $str("so your name is ")
-	call puts
+	mov rsi, stdout
+	call fputs
     mov rdi, name
-	call puts
+	mov rsi, stdout
+	call fputs
     mov rdi, $str('?', 10, "what a cool name!", 10)
-    call puts
+	mov rsi, stdout
+    call fputs
     
     ret
 

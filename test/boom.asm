@@ -8,7 +8,7 @@ extern memset, memchr
 
 extern malloc, calloc, free, realloc
 
-extern puts, fputs, stderr, stdout
+extern fputs, stderr, stdout
 
 segment .text
 
@@ -58,16 +58,19 @@ main:
 	jnz .nonzero
     
 	; print the alphabet
-	mov edi, alphabet
-	call puts
+	mov rdi, alphabet
+	mov rsi, stdout
+	call fputs
 	
 	; print the incbin message
-	mov edi, incbinmsg
-	call puts
+	mov rdi, incbinmsg
+	mov rsi, stdout
+	call fputs
 	
 	; print no errors message
-	mov edi, no_err
-	call puts
+	mov rdi, no_err
+	mov rsi, stdout
+	call fputs
 	
 	xor eax, eax
     ret

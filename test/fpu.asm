@@ -1,4 +1,4 @@
-#!csx.exe -s
+#!csx.exe -st
 
 global main
 
