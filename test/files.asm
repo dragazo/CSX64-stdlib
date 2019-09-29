@@ -1,4 +1,4 @@
-#!echo [[ERROR]] run as ./csx.exe -s --fs
+#!csx.exe -us
 
 global main
 
