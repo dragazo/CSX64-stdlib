@@ -43,7 +43,7 @@ prefix_stuff_dont_call_this: ; (it assembling errorlessly is the test case)
 	repnz ret
 	repe ret
 	repne ret
-
+	
 dump:
     mov rdi, 40125
     mov rsi, rdi
@@ -111,6 +111,16 @@ __read_arr:
     darr: dq 1.3, 1.9, 2.0, 2.1, 3.4, 5.7, 7.5, 255.99
     
 main:
+	setnae al ; make sure these assemble and execute
+	setne ah
+	seto ax
+	sets eax
+	setnc rax
+	setnae byte ptr [fstat]
+	seto word ptr [fstat]
+	sets dword ptr [fstat]
+	setnc qword ptr [fstat]
+	
     fstenv [fstat]
     fldenv [fstat]
     fstenv [fstat]
