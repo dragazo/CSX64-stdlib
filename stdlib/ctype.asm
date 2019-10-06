@@ -1,214 +1,131 @@
 ; source: http://www.cplusplus.com/reference/cctype/
 ; needs testing
 
-global isalpha, isdigit, isxdigit, isalnum
-global islower, isupper
-global tolower, toupper
+; contract: these functions may only modify eax and edi
+global isalpha, islower, isupper, isdigit
+global isalnum, isxdigit 
 global iscntrl, isspace, isblank
 global isprint, isgraph, ispunct
+; contract: these functions may only modify eax, edi, and esi
+global tolower, toupper
 
 segment .text
 
 ; int isalpha(int);
 isalpha:
-    or dil, 32   ; convert to lowercase
-    cmp edi, 'a' ; only test lowercase range
-    jl .ret_0
-    cmp edi, 'z'
-    jg .ret_0
-    
-    mov eax, edi ; return nonzero
-    ret
-    
-    .ret_0:
-    xor eax, eax ; return zero
-    ret
-; int isdigit(int);
-isdigit:
-    cmp edi, '0'
-    jl .ret_0
-    cmp edi, '9'
-    jg .ret_0
-    
-    mov eax, edi ; return nonzero
-    ret
-    
-    .ret_0: 
-    xor eax, eax ; return zero
-    ret
-; int isxdigit(int);
-isxdigit:
-    cmp edi, '0'
-    jl .not_digit
-    cmp edi, '9'
-    jg .not_digit
-    
-    mov eax, edi ; return nonzero
-    ret
-    
-    .not_digit:
-    or dil, 32   ; convert to lowercase
-    cmp edi, 'a' ; only test lowercase range
-    jl .ret_0
-    cmp edi, 'f'
-    jg .ret_0
-    
-    mov eax, edi ; return nonzero
-    ret
-    
-    .ret_0: 
-    xor eax, eax ; return zero
-    ret
-; int isalnum(int);
-isalnum:
-    call isdigit ; do digit first because it doesn't modify edi
-    mov esi, eax
-    call isalpha ; or it with alpha
-    or eax, esi
-    ret
-
+	or dil, 32 ; convert to lowercase
 ; int islower(int);
 islower:
-    cmp edi, 'a'
-    jl .ret_0
-    cmp edi, 'z'
-    jg .ret_0
-    
-    mov eax, edi ; return nonzero
-    ret
-    
-    .ret_0:
-    xor eax, eax ; return zero
-    ret
+	sub dil, 'a'
+	cmp dil, 26 ; a-z
+	setb eax
+	ret
 ; int isupper(int);
 isupper:
-    cmp edi, 'A'
-    jl .ret_0
-    cmp edi, 'Z'
-    jg .ret_0
-    
-    mov eax, edi ; return nonzero
-    ret
-    
-    .ret_0:
-    xor eax, eax ; return zero
-    ret
-    
-; int tolower(int);
-tolower:
-    mov esi, edi ; store char in esi
-    call isalpha
-    cmp eax, 0
-    jz .ret ; if not alpha, return esi
-    
-    or sil, 32 ; convert to lower
-    
-    .ret:
-    mov eax, esi ; return esi
-    ret
-; int toupper(int);
-toupper:
-    mov esi, edi ; store char in esi
-    call isalpha
-    cmp eax, 0
-    jz .ret ; if not alpha, return esi
-    
-    and sil, ~32 ; convert to upper
-    
-    .ret:
-    mov eax, esi ; return esi
-    ret
+	sub dil, 'A'
+	cmp dil, 26 ; A-Z
+	setb eax
+	ret
+; int isdigit(int);
+isdigit:
+	sub dil, '0'
+	cmp dil, 10 ; 0-9
+	setb eax
+	ret
+
+; int isalnum(int);
+isalnum:
+    mov eax, edi ; store char in eax
+	or  dil, 32  ; convert to lowercase
+	sub dil, 'a'
+	cmp dil, 26  ; a-z or A-Z
+	mov edi, eax ; restore char to eax
+	jae isdigit  ; if not in char range, refer to isdigit
+	mov eax, 1
+	ret
+; int isxdigit(int);
+isxdigit:
+	mov eax, edi ; store char in eax
+	or  dil, 32  ; convert to lowercase
+	sub dil, 'a'
+	cmp dil, 6   ; a-f or A-F
+	mov edi, eax ; restore char to eax
+	jae isdigit  ; if not in char range, refer to isdigit
+	mov eax, 1
+	ret
 
 ; int iscntrl(int);
 iscntrl:
-    cmp edi, 0x7f
-    je .ret_true
-    cmp edi, 0
-    jl .ret_0
-    cmp edi, 0x1f
-    jg .ret_0
-    
-    .ret_true:
-    mov eax, edi ; return nonzero
-    inc eax      ; range includes null char
-    ret
-    
-    .ret_0:
-    xor eax, eax ; return zero
-    ret
+	cmp dil, 0x20 ; main control block
+	jae .other
+	mov eax, 1
+	ret
+	.other: cmp dil, 0x7f ; or DEL
+	sete eax
+	ret
 ; int isspace(int);
 isspace:
-    cmp edi, 0x20
-    je .ret_true
-    cmp edi, 0x09
-    jl .ret_0
-    cmp edi, 0x0d
-    jg .ret_0
-    
-    .ret_true:
-    mov eax, edi ; return nonzero
-    ret
-    
-    .ret_0:
-    xor eax, eax ; return zero
-    ret
+	sub dil, 9 ; main space block
+	cmp dil, 5
+	jae .other
+	mov eax, 1
+	ret
+	.other: cmp dil, 0x20-9 ; actual ' ' char
+	sete eax
+	ret
 ; int isblank(int);
 isblank:
-    cmp edi, 0x09
-    je .ret_true
-    cmp edi, 0x20
-    jne .ret_0
-    
-    .ret_true:
-    mov eax, edi ; return nonzero
-    ret
-    
-    .ret_0:
-    xor eax, eax ; return zero
-    ret
+    cmp dil, 9 ; tab
+	jne .other
+	mov eax, 1
+	ret
+	.other: cmp dil, 0x20 ; space ' '
+	sete eax
+	ret
     
 ; int isprint(int);
 isprint:
-    cmp edi, 0x7f
-    je .ret_0
-    cmp edi, 0x20
-    jl .ret_0
-    cmp edi, 0xff
-    jg .ret_0
-    
-    mov eax, edi ; return nonzero
-    ret
-    
-    .ret_0: 
-    xor eax, eax ; return zero
-    ret
+	cmp dil, 0x20
+	jb .ret_0
+	cmp dil, 0x7f
+	setne eax
+	ret
+	.ret_0: xor eax, eax
+	ret
 ; int isgraph(int);
 isgraph:
-    cmp edi, 0x7f
-    je .ret_0
-    cmp edi, 0x21
-    jl .ret_0
-    cmp edi, 0xff
-    jg .ret_0
-    
-    mov eax, edi ; return nonzero
-    ret
-    
-    .ret_0: 
-    xor eax, eax ; return zero
-    ret
+    cmp dil, 0x21
+	jb .ret_0
+	cmp dil, 0x7f
+	setne eax
+	ret
+	.ret_0: xor eax, eax
+	ret
 ; int ispunct(int);
 ispunct:
     call isgraph ; must be a graph char
     cmp eax, 0
     jz .ret
-    
     call isalnum ; must not be alnum
     cmp eax, 0
-    jnz .ret_0
-    
-    inc eax ; return nonzero
+	setz eax
+	.ret: ret
+
+; int tolower(int);
+tolower:
+    mov esi, edi ; store char in esi
+    call isupper
+    cmp eax, 0
+    jz .ret
+    or sil, 32 ; convert to lower
+    .ret: mov eax, esi
     ret
-    
-    .ret_0: xor eax, eax ; return zero
-    .ret: ret            ; return eax
+; int toupper(int);
+toupper:
+    mov esi, edi ; store char in esi
+    call islower
+    cmp eax, 0
+    jz .ret
+    and sil, ~32 ; convert to upper
+    .ret: mov eax, esi
+    ret
