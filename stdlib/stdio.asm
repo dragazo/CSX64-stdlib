@@ -442,6 +442,8 @@ __vscanf:
 		je .i32_decimal
 		cmp al, 'u'
 		je .u32_decimal
+		cmp al, '%'
+		je .literal_nonwhite ; %% escape sequence
 		
 		; otherwise unknown format flag
 		mov rdi, $str(`\n[[ERROR]] unrecognized scanf format flag\n`)
@@ -475,7 +477,10 @@ __vscanf:
 		movzx edi, al
 		call isspace
 		cmp eax, 0
-		jnz .skipws ; if it's white space, skip white space in the stream
+		jz .literal_nonwhite
+		call __scanf_skipws ; if it's a white space char, skip white space in the stream
+		jmp .loop_aft
+		.literal_nonwhite:
 		
 		; otherwise we need to match a character
 		xor edi, edi
@@ -485,10 +490,6 @@ __vscanf:
 		jne .loop_break ; if they differ, abort parsing
 		mov edi, 1
 		call r15 ; otherwise extract the character from the stream
-		jmp .loop_aft
-		
-		.skipws:
-		call __scanf_skipws
 	.loop_aft:
 		inc r12
 	.loop_test:
@@ -608,7 +609,19 @@ __printf_u64_decimal:
 	
 	add rsp, 21 ; clean up the stack space we allocated for the string
 	ret ; return result from sprinter (number of characters written)
-		
+; u64 __printf_u32_decimal(u32 val)
+__printf_u32_decimal:
+	mov eax, eax             ; zero extend eax to 64-bit
+	jmp __printf_u64_decimal ; then just refer to the 64-bit version
+; u64 __printf_u16_decimal(u16 val)
+__printf_u16_decimal:
+	movzx eax, ax            ; zero extend ax to 64-bit
+	jmp __printf_u64_decimal ; then just refer to the 64-bit version
+; u64 __printf_u8_decimal(u8 val)
+__printf_u8_decimal:
+	movzx eax, al            ; zero extend al to 64-bit
+	jmp __printf_u64_decimal ; then just refer to the 64-bit version
+	
 ; u64 __printf_i64_decimal(i64 val)
 ; prints the (signed) value and returns the number of characters written to the stream
 __printf_i64_decimal:
@@ -629,7 +642,232 @@ __printf_i64_decimal:
 	add rax, rbx ; add to #chars written
 	
 	ret
+; u64 __printf_i32_decimal(i32 val)
+__printf_i32_decimal:
+	movsx rax, eax           ; sign extend eax to 64-bit
+	jmp __printf_i64_decimal ; then just refer to the 64-bit version
+; u64 __printf_i16_decimal(i16 val)
+__printf_i16_decimal:
+	movsx rax, ax            ; sign extend ax to 64-bit
+	jmp __printf_i64_decimal ; then just refer to the 64-bit version
+; u64 __printf_i8_decimal(i8 val)
+	movsx rax, al            ; sign extend al to 64-bit
+	jmp __printf_i64_decimal ; then just refer to the 64-bit version
+	
+; printf format flag (prefix) enum
+__vprintf_fmt: equ 0
+	.minus: equ 1   ; - flag was used (left justify)
+	.plus:  equ 2   ; + flag was used (showpos)
+	.hash:  equ 4   ; # flag was used (showbase/showpoint depending on int/float)
+	.zero:  equ 8   ; 0 flag was used (pad with zeros)
+	.width: equ 16  ; width was specified (most things ignore this)
+	.prec:  equ 32  ; precision was specified (most things ignore this)
 
+__vprintf_scale: equ 0
+	.default: equ 0
+	.hh:      equ 1
+	.h:       equ 2
+	.l:       equ 3
+	.ll:      equ 4
+	.j:       equ 5
+	.z:       equ 6
+	.t:       equ 7
+	.L:       equ 8
+	
+__vprintf_fmt_pack: equ 0
+	.SIZE: equ 16
+	
+	.fmt:   equ 0  ; u32 collection of format flags
+	.width: equ 4  ; u32 width to use (positive)
+	.prec:  equ 8  ; u32 precision to use (positive)
+	.scale: equ 12 ; u32 denotes size of operand
+
+; int __vprintf_read_prefix(fmt_pack *res : rsi, arglist * : r10, const char *&str : r12);
+; WARNING: nonstandard calling convention.
+; reads all the relevant formatting info for the current item (after reading the % char).
+; returns zero on success.
+__vprintf_read_prefix:
+	xor ecx, ecx ; clear ecx (will hold flags)
+	
+	.unord_flag_loop:
+		mov al, byte ptr [r12]
+		
+		cmp al, '+'
+		je .plus
+		cmp al, '-'
+		je .minus
+		cmp al, '0'
+		je .zero
+		cmp al, '#'
+		je .hash
+		
+		jmp .unord_flag_loop_done ; if it was none of those, we're done
+		
+		.plus:
+			test ecx, __vprintf_fmt.plus ; test if this flag was already set (if so, invalid fmt)
+			jnz .invalid
+			or ecx, __vprintf_fmt.plus
+			jmp .unord_flag_aft
+		.minus:
+			test ecx, __vprintf_fmt.minus ; test if this flag was already set (if so, invalid fmt)
+			jnz .invalid
+			or ecx, __vprintf_fmt.minus
+			jmp .unord_flag_aft
+		.zero:
+			test ecx, __vprintf_fmt.zero ; test if this flag was already set (if so, invalid fmt)
+			jnz .invalid
+			or ecx, __vprintf_fmt.zero
+			jmp .unord_flag_aft
+		.hash:
+			test ecx, __vprintf_fmt.hash ; test if this flag was already set (if so, invalid fmt)
+			jnz .invalid
+			or ecx, __vprintf_fmt.hash
+			
+	.unord_flag_aft:
+		inc r12 ; on to next char
+		jmp .unord_flag_loop
+	.unord_flag_loop_done:
+	
+	xor eax, eax ; clear eax (will hold width)
+	mov bl, byte ptr [r12] ; read the next char
+	cmp bl, '*'
+	je .param_width ; if char is * then width is specified via param
+	sub bl, '0'
+	cmp bl, 10
+	jae .no_width ; if it's not a digit then there's no width specified
+	
+	or ecx, __vprintf_fmt.width ; mark that a width was specified
+	inc r12    ; increment up to the next char
+	mov al, bl ; move the 0-9 first digit into the width register
+	.width_parsing:
+		movzx ebx, byte ptr [r12] ; read the next character from format string
+		sub bl, '0'
+		cmp bl, 10
+		jae .width_parsing_done ; if it's not a digit, we're done parsing width
+		
+		imul eax, 10 ; incorporate the next digit into the width value
+		add eax, ebx
+		inc r12
+		jmp .width_parsing
+	.width_parsing_done:
+	jmp .no_width ; resume logic after width parsing
+	
+	.param_width:
+	inc r12 ; increment up to the next char
+	or ecx, __vprintf_fmt.width ; mark that a width was specified
+	mov r11, rdi     ; save rdi in r11 for the main __vprintf func
+	mov rdi, r10     ; load the arglist pointer
+	call arglist_i32 ; get a 32-bit integer arg from the pack and use it as width
+	mov rdi, r11
+	
+	.no_width:
+	mov dword ptr [rsi + __vprintf_fmt_pack.width], eax ; store the width in the format pack
+	
+	xor eax, eax ; clear eax (will hold precision)
+	cmp byte ptr [r12], '.'
+	jne .no_prec ; if next char is not a . then there's no precision
+	
+	or ecx, __vprintf_fmt.prec ; mark that a precision was specified
+	inc r12 ; skip the .
+	
+	mov bl, byte ptr [r12] ; read the first character of precision field from format string
+	cmp bl, '*'
+	je .param_prec ; if it's a * then we use a param precision value
+	sub bl, '0'
+	cmp bl, 10
+	jae .invalid ; if it's not a digit then this format string is invalid
+	
+	inc r12    ; increment up to the next char
+	mov al, bl ; move the 0-9 first digit into the width register
+	.prec_parsing:
+		movzx ebx, byte ptr [r12] ; read the next character from format string
+		sub bl, '0'
+		cmp bl, 10
+		jae .prec_parsing_done ; if it's not a digit, we're done parsing precision
+		
+		imul eax, 10 ; incorporate the next digit into the precision value
+		add eax, ebx
+		inc r12
+		jmp .prec_parsing
+	.prec_parsing_done:
+	jmp .no_prec ; resume logic after prec parsing
+	
+	.param_prec:
+	inc r12 ; bump up to the next character
+	mov r11, rdi     ; save rdi in r11 for the main __vprintf func
+	mov rdi, r10     ; load the arglist pointer
+	call arglist_i32 ; get a 32-bit integer arg from the pack and use it as precision
+	mov rdi, r11
+	
+	.no_prec:
+	mov dword ptr [rsi + __vprintf_fmt_pack.prec], eax ; store the precision in the format pack
+	
+	mov bl, byte ptr [r12] ; read the next char of the format string
+	cmp bl, 'h'
+	je .half_seq ; if it's an h we're in h or hh case (short/char)
+	cmp bl, 'l'
+	je .long_seq ; if it's an l we're in l or ll case (long/long long)
+	cmp bl, 'j'
+	je .j_scale ; if it's a j we're in intmax case
+	cmp bl, 'z'
+	je .z_scale ; if it's a z we're in size_t case
+	cmp bl, 't'
+	je .t_scale ; if it's a t we're in ptrdiff_t case
+	cmp bl, 'L'
+	je .L_scale ; if it's an L we're in long double case
+	
+	mov eax, __vprintf_scale.default ; otherwise use the default option and continue (no chars to extract)
+	jmp .scale_done
+	
+	.L_scale:
+	mov eax, __vprintf_scale.L
+	inc r12 ; move to next char in format string
+	jmp .scale_done
+	
+	.t_scale:
+	mov eax, __vprintf_scale.t
+	inc r12 ; move to next char in format string
+	jmp .scale_done
+	
+	.z_scale:
+	mov eax, __vprintf_scale.z
+	inc r12 ; move to next char in format string
+	jmp .scale_done
+	
+	.j_scale:
+	mov eax, __vprintf_scale.j
+	inc r12 ; move to next char in format string
+	jmp .scale_done
+	
+	.half_seq:
+	mov eax, __vprintf_scale.h
+	inc r12 ; move to next char in format string
+	cmp byte ptr [r12], 'h'
+	jne .scale_done ; if it's not another h we're done with scale
+	mov eax, __vprintf_scale.hh
+	inc r12 ; consume the second h as well
+	jmp .scale_done
+	
+	.long_seq:
+	mov eax, __vprintf_scale.l
+	inc r12 ; move to next char in format string
+	cmp byte ptr [r12], 'l'
+	jne .scale_done ; if it's not another l we're done with scale
+	mov eax, __vprintf_scale.ll
+	inc r12 ; consume the second l as well
+	
+	.scale_done:
+	mov dword ptr [rsi + __vprintf_fmt_pack.scale], eax ; store scale info to format pack
+	
+	mov dword ptr [rsi + __vprintf_fmt_pack.fmt], ecx ; and finally, store the format flags to the format pack as well
+	
+	xor eax, eax ; return 0
+	ret ; finally done - pack fully parsed and r12 now points to the mode character
+	
+	.invalid: ; this happens if the format string was invalid (failed to parse)
+	mov eax, 1
+	ret ; return nonzero to indicate failure
+	
 ; int __vprintf(const char *fmt, arglist *args, sprinter : r15, sprinter_arg : r14)
 ; this serves as the implementation for all the various printf functions.
 ; the format string and arglist should be passed as normal args.
@@ -637,7 +875,8 @@ __printf_i64_decimal:
 ; the sprinter function and sprinter arg should be set up in registers r14 and r15
 __vprintf:
 	.BUF_CAP: equ 63 ; amount of buffer space to put on the stack for efficiency
-	.BUF_START: equ 32 ; starting position of stack buffer (also amount of space for storing registers)
+	.FMT_START: equ 32 ; starting position of fmt pack (has space before it for storing registers)
+	.BUF_START: equ .FMT_START + __vprintf_fmt_pack.SIZE ; starting position of stack buffer (has space before it for fmt pack)
 	.TMP_SIZE: equ 8 ; size of temp space for storing intermediate values on the stack
 	.TMP_START: equ .BUF_START + (.BUF_CAP+1) ; starting position of temp space
 	sub rsp, .BUF_START + (.BUF_CAP+1) + .TMP_SIZE ; put args and call safe registers on the stack + buffer space
@@ -659,7 +898,19 @@ __vprintf:
 		inc r12 ; skip to next char (format flag)
 		mov al, byte ptr [r12] ; get the following character
 		cmp al, 0
-		jz .loop_brk ; if it's a terminator, just break from the loop
+		jz .invalid ; if it's a terminator, invalid format string
+		
+		cmp al, '%'
+		je .simple_char ; escape % can just be printed by simple char code
+		
+		; parse the format prefix
+		lea rsi, [rsp + .FMT_START]
+		mov r10, qword ptr [rsp + 8]
+		call __vprintf_read_prefix
+		cmp eax, 0
+		jnz .invalid ; if that returned nonzero we failed to parse prefix
+		
+		mov al, byte ptr [r12] ; we need to reload the format character after parsing prefix (pos moved)
 		
 		cmp al, 'd'
 		je .i32_decimal
@@ -671,13 +922,14 @@ __vprintf:
 		je .string
 		cmp al, 'c'
 		je .char
-		cmp al, '%'
-		je .simple_char ; escaped % can just be printed by simple char code
 		
 		; otherwise unknown flag
-		mov rdi, $str(`\n[[ERROR]] unrecognized printf format flag\n`)
+		.invalid:
+		push rdi
+		mov rdi, $str(`\n[[ERROR]] unrecognized printf format character\n`)
 		mov rsi, stderr
 		call fputs
+		pop rdi
 		jmp .loop_brk
 		
 		.u32_decimal:
@@ -735,10 +987,10 @@ __vprintf:
 		cmp al, 0
 		jnz .loop_bod
 	.loop_brk:
-	
+
 	; perform one final buffer flush in case we had anything left in it
 	call .__FLUSH_BUFFER
-	
+
 	add rsp, .BUF_START + (.BUF_CAP+1) + .TMP_SIZE ; clean up stack space
 	ret
 ; this is a pseudo-function to call which flushes buffer.

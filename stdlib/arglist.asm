@@ -2,6 +2,8 @@
 ; this is nonstandard and just serves as convenience for CSX64 programs
 
 global arglist_start, arglist_end
+
+; contract: these functions may only modify rax
 global arglist_i64, arglist_i32, arglist_i16, arglist_i8
 global arglist_f64, arglist_f32
 
@@ -105,11 +107,11 @@ arglist_end:
 ; additionally, these functions guarantee not to modify rdi.
 
 arglist_i64:
-	mov ecx, dword ptr [rdi + arglist.reg_index]
-	cmp ecx, 6
+	mov eax, dword ptr [rdi + arglist.reg_index]
+	cmp eax, 6
 	jae .get_from_stack
 	
-	mov rax, qword ptr [rdi + arglist.reg_arr + rcx*8]
+	mov rax, qword ptr [rdi + arglist.reg_arr + rax*8]
 	inc dword ptr [rdi + arglist.reg_index]
 	ret
 
@@ -119,11 +121,11 @@ arglist_i64:
 	add qword ptr [rdi + arglist.stack_pos], 8
 	ret
 arglist_i32:
-	mov ecx, dword ptr [rdi + arglist.reg_index]
-	cmp ecx, 6
+	mov eax, dword ptr [rdi + arglist.reg_index]
+	cmp eax, 6
 	jae .get_from_stack
 	
-	mov eax, dword ptr [rdi + arglist.reg_arr + rcx*8]
+	mov eax, dword ptr [rdi + arglist.reg_arr + rax*8]
 	inc dword ptr [rdi + arglist.reg_index]
 	ret
 
@@ -133,11 +135,11 @@ arglist_i32:
 	add qword ptr [rdi + arglist.stack_pos], 4
 	ret
 arglist_i16:
-	mov ecx, dword ptr [rdi + arglist.reg_index]
-	cmp ecx, 6
+	mov eax, dword ptr [rdi + arglist.reg_index]
+	cmp eax, 6
 	jae .get_from_stack
 	
-	mov ax, word ptr [rdi + arglist.reg_arr + rcx*8]
+	mov ax, word ptr [rdi + arglist.reg_arr + rax*8]
 	inc dword ptr [rdi + arglist.reg_index]
 	ret
 
@@ -147,11 +149,11 @@ arglist_i16:
 	add qword ptr [rdi + arglist.stack_pos], 2
 	ret
 arglist_i8:
-	mov ecx, dword ptr [rdi + arglist.reg_index]
-	cmp ecx, 6
+	mov eax, dword ptr [rdi + arglist.reg_index]
+	cmp eax, 6
 	jae .get_from_stack
 	
-	mov al, byte ptr [rdi + arglist.reg_arr + rcx*8]
+	mov al, byte ptr [rdi + arglist.reg_arr + rax*8]
 	inc dword ptr [rdi + arglist.reg_index]
 	ret
 
@@ -161,12 +163,12 @@ arglist_i8:
 	inc qword ptr [rdi + arglist.stack_pos]
 	ret
 arglist_f64:
-	mov ecx, dword ptr [rdi + arglist.xmm_index]
-	cmp ecx, 8
+	mov eax, dword ptr [rdi + arglist.xmm_index]
+	cmp eax, 8
 	jae .get_from_stack
 	
-	shl rcx, 4 ; mult 16 (xmm_arr holds xmmwords)
-	movsd xmm0, qword ptr [rdi + arglist.xmm_arr + rcx]
+	shl rax, 4 ; mult 16 (xmm_arr holds xmmwords)
+	movsd xmm0, qword ptr [rdi + arglist.xmm_arr + rax]
 	inc dword ptr [rdi + arglist.xmm_index]
 	ret
 
@@ -176,12 +178,12 @@ arglist_f64:
 	add qword ptr [rdi + arglist.stack_pos], 8
 	ret
 arglist_f32:
-	mov ecx, dword ptr [rdi + arglist.xmm_index]
-	cmp ecx, 8
+	mov eax, dword ptr [rdi + arglist.xmm_index]
+	cmp eax, 8
 	jae .get_from_stack
 	
-	shl rcx, 4 ; mult 16 (xmm_arr holds xmmwords)
-	movss xmm0, dword ptr [rdi + arglist.xmm_arr + rcx]
+	shl rax, 4 ; mult 16 (xmm_arr holds xmmwords)
+	movss xmm0, dword ptr [rdi + arglist.xmm_arr + rax]
 	inc dword ptr [rdi + arglist.xmm_index]
 	ret
 
