@@ -578,81 +578,6 @@ scanf:
 	ret
 
 ; --------------------------------------
-
-; the following formatting functions implicitly take a sprinter function in r15.
-; the sprinter function takes the form u64(*)(const char*), printing the string and returning # chars written.
-; the sprinter function itself is allowed to store an argument in r14.
-; as a contract, you should not modify the values of r14,r15 if you intend to use the sprinter function.
-
-; u64 __printf_u64_decimal(u64 val)
-; prints the (unsigned) value and returns the number of characters written to the stream
-__printf_u64_decimal:
-	sub rsp, 21 ; we need 21 characters to hold the full (decimal) range of u64 (20 digits + terminator)
-	lea r8, [rsp + 20] ; r8 points to the start of the string
-	mov byte ptr [r8], 0 ; place a terminator at end of string
-	mov rax, rdi ; put the value in rax for division
-	mov r9d, 10 ; r9 holds the base (10) to divide by (DIV doesn't accept imm)
-	
-	.loop_top:
-		xor rdx, rdx ; zero high bits for division
-		div r9       ; divide by base - quot kept in rax, remainder (next char) stored in rdx
-		add dl, '0'  ; convert next char (binary) to ascii
-		
-		dec r8                ; make room for another character
-		mov byte ptr [r8], dl ; place the ascii into the string
-		
-		cmp rax, 0
-		jnz .loop_top ; if quotient was nonzero repeat
-	
-	mov rdi, r8
-	call r15 ; print the string using the sprinter function in r15
-	
-	add rsp, 21 ; clean up the stack space we allocated for the string
-	ret ; return result from sprinter (number of characters written)
-; u64 __printf_u32_decimal(u32 val)
-__printf_u32_decimal:
-	mov eax, eax             ; zero extend eax to 64-bit
-	jmp __printf_u64_decimal ; then just refer to the 64-bit version
-; u64 __printf_u16_decimal(u16 val)
-__printf_u16_decimal:
-	movzx eax, ax            ; zero extend ax to 64-bit
-	jmp __printf_u64_decimal ; then just refer to the 64-bit version
-; u64 __printf_u8_decimal(u8 val)
-__printf_u8_decimal:
-	movzx eax, al            ; zero extend al to 64-bit
-	jmp __printf_u64_decimal ; then just refer to the 64-bit version
-	
-; u64 __printf_i64_decimal(i64 val)
-; prints the (signed) value and returns the number of characters written to the stream
-__printf_i64_decimal:
-	cmp rdi, 0
-	jl .negative
-	jmp __printf_u64_decimal ; if not negative, just treat it as unsigned
-	
-	.negative:
-	push rdi
-	mov rdi, $str("-")
-	call r15 ; print a '-' sign using the sprinter function in r15
-	pop rdi
-	
-	push rax ; save #chars written by the sprinter for '-' (presumably 1, but no assumptions)
-	neg rdi  ; negate the value (now non-negative)
-	call __printf_u64_decimal ; print it as unsigned
-	pop rbx
-	add rax, rbx ; add to #chars written
-	
-	ret
-; u64 __printf_i32_decimal(i32 val)
-__printf_i32_decimal:
-	movsx rax, eax           ; sign extend eax to 64-bit
-	jmp __printf_i64_decimal ; then just refer to the 64-bit version
-; u64 __printf_i16_decimal(i16 val)
-__printf_i16_decimal:
-	movsx rax, ax            ; sign extend ax to 64-bit
-	jmp __printf_i64_decimal ; then just refer to the 64-bit version
-; u64 __printf_i8_decimal(i8 val)
-	movsx rax, al            ; sign extend al to 64-bit
-	jmp __printf_i64_decimal ; then just refer to the 64-bit version
 	
 ; printf format flag (prefix) enum
 __vprintf_fmt: equ 0
@@ -759,6 +684,8 @@ __vprintf_read_prefix:
 	mov rdi, r10     ; load the arglist pointer
 	call arglist_i32 ; get a 32-bit integer arg from the pack and use it as width
 	mov rdi, r11
+	cmp eax, 0
+	movl eax, 0 ; if prec is negative, set it to zero
 	
 	.no_width:
 	mov dword ptr [rsi + __vprintf_fmt_pack.width], eax ; store the width in the format pack
@@ -798,6 +725,8 @@ __vprintf_read_prefix:
 	mov rdi, r10     ; load the arglist pointer
 	call arglist_i32 ; get a 32-bit integer arg from the pack and use it as precision
 	mov rdi, r11
+	cmp eax, 0
+	movl eax, 0 ; if prec is negative, set it to zero
 	
 	.no_prec:
 	mov dword ptr [rsi + __vprintf_fmt_pack.prec], eax ; store the precision in the format pack
@@ -867,6 +796,159 @@ __vprintf_read_prefix:
 	.invalid: ; this happens if the format string was invalid (failed to parse)
 	mov eax, 1
 	ret ; return nonzero to indicate failure
+
+; the following formatting functions implicitly take a sprinter function in r15.
+; the sprinter function takes the form u64(*)(const char*), printing the string and returning # chars written.
+; the sprinter function itself is allowed to store an argument in r14.
+; as a contract, you should not modify the values of r14,r15 if you intend to use the sprinter function.
+
+; u64 __printf_u64_decimal_raw(u64 val, __vprintf_fmt_pack *fmt, bool neg : bl)
+; WARNING: nonstandard calling convention
+; prints the (unsigned) value and returns the number of characters written to the stream
+__printf_u64_decimal_raw:
+	mov r10d, dword ptr [rsi + __vprintf_fmt_pack.width]
+	mov r11d, dword ptr [rsi + __vprintf_fmt_pack.prec]
+	cmp r11d, r10d
+	movg r10d, r11d ; put larger of width/precision in r10d
+	and r10d, ~7 ; round down to a multiple of 8
+	add r10d, 16 ; add 16 to still be a multiple of 8 but also have extra space for '-' and base prefixes
+	
+	mov rax, rsp
+	sub rsp, r10 ; allocate that many bytes on the stack
+	push rax     ; save original value of rsp on the stack for restore point later
+	
+	lea r8, [rsp+8 + r10 - 1] ; r8 points to the start of the string
+	mov byte ptr [r8], 0      ; place a null terminator at end of string
+	
+	mov rax, rdi ; put the value in rax for division
+	.loop_top:
+		xor rdx, rdx ; zero high bits for division
+		div qword 10 ; divide by base - quot kept in rax, remainder (next char) stored in rdx
+		add dl, '0'  ; convert next char (binary) to ascii
+		
+		dec r8                ; make room for another character
+		mov byte ptr [r8], dl ; place the ascii char into the string
+		
+		cmp rax, 0
+		jnz .loop_top ; if quotient was nonzero repeat
+	
+	mov cl, 0 ; cl will hold the sign character (0 for none)
+	cmp bl, 0 ; test the neg flag parameter
+	movnz cl, '-'
+	jnz .no_sign
+	test dword ptr [rsi + __vprintf_fmt_pack.fmt], __vprintf_fmt.plus ; check if plus flag is set in format pack
+	movnz cl, '+'
+	.no_sign:
+	
+	test dword ptr [rsi + __vprintf_fmt_pack.fmt], __vprintf_fmt.prec
+	jnz .done_prec_fetch ; if a precedence was explicitly specified, use that (already in r11)
+	xor r11, r11
+	test dword ptr [rsi + __vprintf_fmt_pack.fmt], __vprintf_fmt.zero
+	jz .prec_done ; if the zero flag was not specified, use zero as precision - we can also entirely skip the prec logic
+	mov r11d, dword ptr [rsi + __vprintf_fmt_pack.width]
+	cmp cl, 0
+	setnz rbx
+	sub r11, rbx ; otherwise use: width - #sign chars
+	.done_prec_fetch:
+	
+	lea r9, [rsp+8 + r10 - 1] ; load the address of the terminator
+	sub r9, r11               ; subtract precision - this is address to which we should get with digits
+	jmp .prec_test
+	.prec_top:
+		dec r8                 ; make room for another char
+		mov byte ptr [r8], '0' ; place a zero in the string
+	.prec_test:
+		cmp r8, r9
+		ja .prec_top
+	.prec_done:
+	
+	cmp cl, 0
+	jz .no_sign_print
+	dec r8                ; make room for another character
+	mov byte ptr [r8], cl ; add the sign character to the string
+	.no_sign_print:
+	
+	mov r11d, dword ptr [rsi + __vprintf_fmt_pack.width]
+	lea r9, [rsp+8 + r10 - 1] ; load the address of the terminator
+	sub r9, r8                ; subtract string start - this is current length of string
+	mov rbx, r11
+	sub rbx, r9 ; rbx holds width - current len i.e. the number of spaces to add
+	
+	mov rdi, r8 ; put string start in rdi (after padding logic, it needs to be there)
+	cmp r9, r11
+	jae .done ; if we've already passed the width requirement, we're done
+	test dword ptr [rsi + __vprintf_fmt_pack.fmt], __vprintf_fmt.minus
+	jz .right_justify
+	
+	mov rcx, r9 ; put current length of string in rcx
+	mov rsi, r8 ; source is start of string
+	mov rdi, r8
+	sub rdi, rbx ; dest is start of string - number of spaces to add
+	mov r10, rdi ; save dest in r10 for later (see below)
+	
+	cld       ; clear direction flag so we can do a forward copy
+	rep movsb ; copy the string to the left
+	
+	mov rcx, rbx ; set the number of spaces to insert
+	mov al, ' '  ; set the fill character
+	
+	rep stosb ; insert that many spaces to the right of the string
+	
+	mov rdi, r10 ; load the the start of string (see above)
+	jmp .done    ; and now we're done padding
+	
+	.right_justify:
+	mov rcx, rbx ; set number of chars to insert
+	mov al, ' '  ; set padding char
+	mov rdi, r8
+	dec rdi      ; dest is 1 before start of string
+	std          ; set direction flag so we perform the insertion right-to-left
+	rep stosb    ; insert the padding chars
+	inc rdi      ; since count was nonzero, rdi is now 1 before start of string - bump up to first char
+	
+	.done:
+	call r15 ; print the string using the sprinter function in r15
+
+	pop rsp ; clean up the stack space we allocated for the string
+	ret ; return result from sprinter (number of characters written)
+
+; u64 __printf_u64_decimal(u64 val, __vprintf_fmt_pack *fmt)
+__printf_u64_decimal:
+	mov bl, 0                    ; mark that this is not negative
+	jmp __printf_u64_decimal_raw ; then invoke the raw handler
+; u64 __printf_u32_decimal(u32 val, __vprintf_fmt_pack *fmt)
+__printf_u32_decimal:
+	mov edi, edi             ; zero extend eax to 64-bit
+	jmp __printf_u64_decimal ; then just refer to the 64-bit version
+; u64 __printf_u16_decimal(u16 val, __vprintf_fmt_pack *fmt)
+__printf_u16_decimal:
+	movzx edi, di            ; zero extend ax to 64-bit
+	jmp __printf_u64_decimal ; then just refer to the 64-bit version
+; u64 __printf_u8_decimal(u8 val, __vprintf_fmt_pack *fmt)
+__printf_u8_decimal:
+	movzx edi, dil           ; zero extend al to 64-bit
+	jmp __printf_u64_decimal ; then just refer to the 64-bit version
+	
+; u64 __printf_i64_decimal(i64 val, __vprintf_fmt_pack *fmt)
+__printf_i64_decimal:
+	mov rax, rdi
+	neg rax                      ; pre-compute the negative of val in rax
+	cmp rdi, 0
+	setl bl                      ; set negative flag in bl
+	movl rdi, rax                ; conditionally copy the negative value (now positive) back into rdi
+	jmp __printf_u64_decimal_raw ; then invoke the raw handler
+; u64 __printf_i32_decimal(i32 val, __vprintf_fmt_pack *fmt)
+__printf_i32_decimal:
+	movsx rdi, edi           ; sign extend eax to 64-bit
+	jmp __printf_i64_decimal ; then just refer to the 64-bit version
+; u64 __printf_i16_decimal(i16 val, __vprintf_fmt_pack *fmt)
+__printf_i16_decimal:
+	movsx rdi, di            ; sign extend ax to 64-bit
+	jmp __printf_i64_decimal ; then just refer to the 64-bit version
+; u64 __printf_i8_decimal(i8 val, __vprintf_fmt_pack *fmt)
+__printf_i8_decimal:
+	movsx rdi, dil           ; sign extend al to 64-bit
+	jmp __printf_i64_decimal ; then just refer to the 64-bit version
 	
 ; int __vprintf(const char *fmt, arglist *args, sprinter : r15, sprinter_arg : r14)
 ; this serves as the implementation for all the various printf functions.
@@ -933,33 +1015,35 @@ __vprintf:
 		jmp .loop_brk
 		
 		.u32_decimal:
-		call .__FLUSH_BUFFER ; flush the buffer before we do the formatted output
+		call .__FLUSH_BUFFER         ; flush the buffer before we do the formatted output
 		mov rdi, qword ptr [rsp + 8] ; load the arglist
-		call arglist_i32 ; get the next int arg
-		mov edi, eax ; put in rdi (implicitly zero extended)
-		call __printf_u64_decimal ; print it (unsigned) (decimal)
-		add r13, rax ; update total printed chars
-		xor rdi, rdi ; reset the buffer after formatted output
+		call arglist_i32             ; get the next int arg
+		mov edi, eax                 ; put in edi
+		lea rsi, [rsp + .FMT_START]  ; load the format packet address
+		call __printf_u32_decimal    ; print it (unsigned) (decimal)
+		add r13, rax                 ; update total printed chars
+		xor rdi, rdi                 ; reset the buffer after formatted output
 		jmp .loop_aft
 		
 		.i32_decimal:
-		call .__FLUSH_BUFFER ; flush the buffer before we do the formatted output
+		call .__FLUSH_BUFFER         ; flush the buffer before we do the formatted output
 		mov rdi, qword ptr [rsp + 8] ; load the arglist
-		call arglist_i32 ; get the next int arg
-		movsx rdi, eax
-		call __printf_i64_decimal ; print it (signed) (decimal)
-		add r13, rax ; update total printed chars
-		xor rdi, rdi ; reset the buffer after formatted output
+		call arglist_i32             ; get the next int arg
+		mov edi, eax                 ; put in edi
+		lea rsi, [rsp + .FMT_START]  ; load the format packet address
+		call __printf_i32_decimal    ; print it (signed) (decimal)
+		add r13, rax                 ; update total printed chars
+		xor rdi, rdi                 ; reset the buffer after formatted output
 		jmp .loop_aft
 		
 		.string:
-		call .__FLUSH_BUFFER ; flush the buffer before we do the formatted output
+		call .__FLUSH_BUFFER         ; flush the buffer before we do the formatted output
 		mov rdi, qword ptr [rsp + 8] ; load the arglist
-		call arglist_i64 ; get the pointer (64-bit integer)
-		mov rdi, rax
-		call r15 ; print the string using the sprinter function
-		add r13, rax ; update total printed chars
-		xor rdi, rdi ; reset the buffer after formatted output
+		call arglist_i64             ; get the pointer (64-bit integer)
+		mov rdi, rax                 ; put it in rdi
+		call r15                     ; print the string using the sprinter function
+		add r13, rax                 ; update total printed chars
+		xor rdi, rdi                 ; reset the buffer after formatted output
 		jmp .loop_aft
 		
 		.char:
