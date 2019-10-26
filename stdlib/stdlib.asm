@@ -571,6 +571,7 @@ calloc:
     mov rdi, rax ; set fill destination
     xor rax, rax ; set fill value
     shr rcx, 3   ; get # of 64-bit blocks to fill
+	cld          ; set forward fill mode
     rep stosq    ; fill with zero
     mov rax, r8  ; restore return value
     

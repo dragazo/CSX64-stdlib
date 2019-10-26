@@ -854,13 +854,22 @@ __printf_u64_raw:
 	
 	test dword ptr [rsi + __vprintf_fmt_pack.fmt], __vprintf_fmt.prec
 	jnz .done_prec_fetch ; if a precedence was explicitly specified, use that (already in r11)
-	xor r11, r11
 	test dword ptr [rsi + __vprintf_fmt_pack.fmt], __vprintf_fmt.zero
-	jz .prec_done ; if the zero flag was not specified, use zero as precision - we can also entirely skip the prec logic
-	mov r11d, dword ptr [rsi + __vprintf_fmt_pack.width]
+	jz .prec_done ; otherwise if the zero flag was not specified, we can just entirely skip the prec logic
+	mov r11d, dword ptr [rsi + __vprintf_fmt_pack.width] ; otherwise use width
 	cmp ch, 0
 	setnz rdx
-	sub r11, rdx ; otherwise use: width - #sign chars
+	sub r11, rdx ; subtract 1 if there's going to be a sign character
+	test dword ptr [rsi + __vprintf_fmt_pack.fmt], __vprintf_fmt.hash
+	jz .done_prec_fetch ; if showbase is disabled, we're done with prec computation
+		cmp cl, 16
+		je .prec_hex ; if in hex mode
+		cmp cl, 8
+		sete rdx
+		sub r11, rdx ; otherwise, if in octal mode, take off 1 char for 0 prefix
+		jmp .done_prec_fetch
+		.prec_hex:
+		sub r11, 2 ; take off 2 chars from precision for the 0x prefix
 	.done_prec_fetch:
 	
 	lea r9, [rsp+8 + r10 - 1] ; load the address of the terminator

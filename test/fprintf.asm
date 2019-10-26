@@ -7,6 +7,8 @@ extern fprintf, printf, puts
 
 segment .text
 
+static_assert 'abcd' == 0x64636261 ; make sure we're making multibyte chars little endian
+
 main:
 	mov rdi, stdout
 	mov rsi, $str("i'm gonna make this string really long so that it goes onto a new buffer page and has to do potentially more than a single trivial flush of the buffer stack thing", 10)
@@ -165,12 +167,66 @@ main:
 	mov al, 0
 	call printf
 	
-	mov rdi, $str(`%o %+o  %#o %8o  %#+-08o\n`)
+	mov rdi, $str(`%o %+o  %#o %8o %#+-08o\n`)
 	mov rsi, 0o1337
 	mov rdx, 0o1337
 	mov rcx, 0o1337
 	mov r8, 0o1337
 	mov r9, 0o1337
+	mov al, 0
+	call printf
+	
+	mov rdi, $str(`\n%x %+x %#x %.8x %#+-0.8x\n`)
+	mov rsi, 0xbead
+	mov rdx, 0xbead
+	mov rcx, 0xbead
+	mov r8, 0xbead
+	mov r9, 0xbead
+	mov al, 0
+	call printf
+	
+	mov rdi, $str(`%X %+X %#X %.8X %#+-0.8X\n`)
+	mov rsi, 0xbead
+	mov rdx, 0xbead
+	mov rcx, 0xbead
+	mov r8, 0xbead
+	mov r9, 0xbead
+	mov al, 0
+	call printf
+	
+	mov rdi, $str(`%o %+o  %#o %.8o  %#+-0.8o\n`)
+	mov rsi, 0o1337
+	mov rdx, 0o1337
+	mov rcx, 0o1337
+	mov r8, 0o1337
+	mov r9, 0o1337
+	mov al, 0
+	call printf
+	
+	mov rdi, $str(`\nno overflow: %#d %#0d %#.0d %#0.0d %#+0.0d\n`)
+	mov rsi, -123
+	mov rdx, -123
+	mov rcx, -123
+	mov r8, -123
+	mov r9, -123
+	mov al, 0
+	call printf
+	
+	mov rdi, $str(`no overflow: %#x %#0x %#.0x %#0.0x %#+0.0x\n`)
+	mov rsi, -123
+	mov rdx, -123
+	mov rcx, -123
+	mov r8, -123
+	mov r9, -123
+	mov al, 0
+	call printf
+	
+	mov rdi, $str(`no overflow: %#o %#0o %#.0o %#0.0o %#+0.0o\n`)
+	mov rsi, -123
+	mov rdx, -123
+	mov rcx, -123
+	mov r8, -123
+	mov r9, -123
 	mov al, 0
 	call printf
 	
