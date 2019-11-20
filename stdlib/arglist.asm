@@ -53,8 +53,8 @@ arglist_start:
 	mov qword ptr [rsp + arglist.root_rsp], r11
 	
 	; copy as many xmm regs as we need
-	movzx eax, al
-	imul eax, -.xmm_code_len
+	movzx rax, al
+	imul rax, -.xmm_code_len
 	add rax, .xmm_none
 	jmp rax
 	.xmm_7: movapd xmmword ptr [rsp + arglist.xmm_arr + 7*16], xmm7
@@ -74,8 +74,8 @@ arglist_start:
 	static_assert .xmm_4 - .xmm_5 == .xmm_code_len
 	static_assert .xmm_5 - .xmm_6 == .xmm_code_len
 	static_assert .xmm_6 - .xmm_7 == .xmm_code_len
-	
-	; copy all the itegral registers
+		
+	; copy all the integral registers
 	mov qword ptr [rsp + arglist.reg_arr + 5*8], r9
 	mov qword ptr [rsp + arglist.reg_arr + 4*8], r8
 	mov qword ptr [rsp + arglist.reg_arr + 3*8], rcx

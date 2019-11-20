@@ -29,7 +29,7 @@ main:
 	; make sure it succeeds
 	cmp rax, 0
 	jnz .success_1
-	mov rdi, $str('failed', 'to',"open" , 'f', `ile (`,'1'+0,`)`)
+	mov rdi, $str('failed', ' to'," open " , 'f', `ile (`,'1'+0,`)`)
 	call puts
 	mov eax, 1
 	ret

@@ -38,8 +38,15 @@ tester:
 	.fail:
 	mov edi, 1
 	call exit
-	
+
+debug_n: equ 0
+
 main:
+	times debug_n == 1 ? 3 : 0 debug_cpu
+	times debug_n == 2 ? 3 : 0 debug_vpu
+	times debug_n == 3 ? 3 : 0 debug_full
+	times debug_n == 4 ? 3 : 0 debug_mem [0], 32
+	
 	mov r8, iscntrl_ans
 	mov r9, iscntrl
 	mov r10, $str("iscntrl")

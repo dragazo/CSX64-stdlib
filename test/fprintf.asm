@@ -230,5 +230,17 @@ main:
 	mov al, 0
 	call printf
 	
+	mov rdi, $str(`\nfloating test: %f\n`)
+	mov rax, 1.123
+	movq xmm0, rax
+	mov al, 1
+	call printf
+	
+	mov rdi, $str(`floating test: %f\n`)
+	mov rax, -1.123
+	movq xmm0, rax
+	mov al, 1
+	call printf
+	
 	xor eax, eax
 	ret

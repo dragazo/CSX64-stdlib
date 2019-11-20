@@ -44,6 +44,22 @@ prefix_stuff_dont_call_this: ; (it assembling errorlessly is the test case)
 	repe ret
 	repne ret
 	
+	movd eax, xmm0
+	movd dword ptr [rsi], xmm0
+	movd xmm0, eax
+	movd xmm0, dword ptr [rsi]
+	
+	movq rax, xmm0
+	movq qword ptr [rsi], xmm0
+	movq xmm0, rax
+	movq xmm0, qword ptr [rsi]
+	
+	movbs rax, [rdi]
+	movbs [rdi], rax
+	movbs rax, rdi
+	movbs ax, di
+	movbs eax, dword ptr [rdi]
+	
 dump:
     mov rdi, 40125
     mov rsi, rdi

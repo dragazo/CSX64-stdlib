@@ -1060,6 +1060,164 @@ __printf_u8_octal:
 
 ; ------------------------------------------------------------------------------
 
+; u64 __printf_floating_fixed_raw(f64 val, __vprintf_fmt_pack *fmt : rsi)
+__printf_floating_fixed_raw:
+	movsd xmm1, xmm0 ; copy value into xmm1 for later
+	movq rax, xmm0
+	and rax, 0x7fffffffffffffff
+	movq xmm0, rax ; and convert the value to positive equivalent
+
+	mov r10d, dword ptr [rsi + __vprintf_fmt_pack.width]
+	mov r11d, dword ptr [rsi + __vprintf_fmt_pack.prec]
+	add r11d, 400
+	cmp r11d, r10d
+	movg r10d, r11d ; put larger of width / prec+400 in r10d
+	and r10d, ~7 ; round down to a multiple of 8
+	add r10d, 32 ; add some more to still be a multiple of 8 but also have a bit extra
+	
+	mov rax, rsp
+	sub rsp, r10 ; allocate that many bytes on the stack
+	push rax     ; save original value of rsp on the stack for restore point later
+	
+	mov r11d, r10d
+	sub r11d, dword ptr [rsi + __vprintf_fmt_pack.prec]
+	lea r8, [rsp+8 + r11 - 2] ; r8 points to the decimal point
+	mov r9, r8 ; copy this to r9 for later restore point
+	
+	mov byte ptr [r8], '.' ; put the decimal point there
+	inc r8                 ; bump up to start of first digit
+	
+	; reset fpu and set rounding mode to toward 0
+	finit
+	fstcw word ptr [rsp - 2]
+	or word ptr [rsp - 2], 0x0c00
+	fldcw word ptr [rsp - 2]
+	
+	mov qword ptr [rsp - 8], 10.0
+	fld qword ptr [rsp - 8]         ; load a 10.0 for multiplication
+	movsd qword ptr [rsp - 8], xmm0
+	fld qword ptr [rsp - 8]         ; load the value
+
+	fxam     ; examine the value
+	fstsw ax ; store status word to ax
+	sahf     ; update flags
+	jnc .typical
+	
+	; if we get here st0 is either nan, inf, or empty (impossible)
+	movnp r8, $str("nan")
+	movp r8, $str("inf")
+	jmp .print
+	
+	.typical:
+	mov ecx, dword ptr [rsi + __vprintf_fmt_pack.prec]
+	jecxz .prec_done
+	.prec_loop:
+		fld1                         ; push a 1 onto the stack
+		fxch                         ; swap so we have value, 1
+		fprem                        ; get remainder of division by 1
+		fstp st1                     ; pop the stack
+		fmul st0, st1                ; multiply st0 [0, 1) by 10
+		fist dword ptr [rsp - 4]     ; store that as an integer on the stack 0..9
+		mov eax, dword ptr [rsp - 4] ; load that into a register
+		add al, '0'                  ; convert to an ascii digit '0'..'9'
+		
+		mov byte ptr [r8], al ; store that prec digit to the string
+		inc r8                ; on to next prec digit
+		
+		loop .prec_loop
+	.prec_done:
+	mov byte ptr [r8], 0 ; null terminate the string at end of prec digits
+	
+	; get the next digit we would have printed (but don't actually print it)
+	fld1                     ; push a 1 onto the stack
+	fxch                     ; swap so we have value, 1
+	fprem                    ; get remainder of division by 1
+	fstp st1                 ; pop the stack
+	fmul st0, st1            ; multiply st0 [0, 1) by 10
+	fist dword ptr [rsp - 4] ; store that as an integer on the stack 0..9
+	
+	cmp dword ptr [rsp - 4], 5 ; compare it to 5
+	setge dl ; if it was >=5 we need to round up by a digit
+	         ; we'll do this later (after int part is constructed)
+	
+	mov r8, r9 ; load restore point - r8 now points at the decimal point
+	
+	fstp st0 ; pop the fpu stack
+	movsd qword ptr [rsp - 8], xmm0
+	fld qword ptr [rsp - 8] ; reload the value
+	frndint                 ; truncate to integer
+	
+	.int_loop:
+		fst st2 ; copy value to st2
+		fprem   ; compute remainder of division by 10
+		fistp dword ptr [rsp - 4]    ; store result (truncated) to temp memory and pop
+		mov eax, dword ptr [rsp - 4] ; move that into a register
+		fxch          ; swap st0 and st1 to put the value copy back in st0 and 10.0 back in st1
+		fdiv st0, st1 ; divide value by 10
+		frndint       ; then round back to int
+		
+		add al, '0' ; convert digit to ascii
+		
+		dec r8 ; make room for new character in string
+		mov byte ptr [r8], al ; store the digit in string
+		
+		ftst          ; compare new remainder to zero
+		fstsw ax      ; store fpu flags in ax
+		sahf          ; apply them to eflags
+		jnz .int_loop ; if nonzero, repeat
+	
+	cmp dl, 0      ; test the rounding flag (stored in dl)
+	jz .round_done ; if not set, we're done rounding
+	
+	lea r9, [rsp+8 + r10 - 2]  ; load address of last significant digit into r9
+	.round_loop:
+		mov al, byte ptr [r9]  ; load this character from the string
+		cmp al, '.'
+		je .round_continue     ; if it's the period, just skip it
+		cmp byte ptr [r9], '9'
+		jne .round_term        ; otherwise if it's not a 9 we're done
+		mov byte ptr [r9], '0' ; otherwise set the digit to 0
+		
+		.round_continue:
+		cmp r9, r8
+		je .round_extend ; if we just processed the first char in string and not done, we need to extend string
+		dec r9
+		jmp .round_loop ; otherwise we're not done and need to continue
+		
+		.round_term:
+		inc byte ptr [r9] ; increment this character by 1
+		jmp .round_done   ; and now we're done
+		
+		.round_extend:
+		dec r8                 ; decrement the string starting pos
+		mov byte ptr [r8], '1' ; append a 1 to the front of the string to finish the rounding
+	.round_done:
+	
+	movq rax, xmm1 ; load the original value into rax
+	test rax, 0x8000000000000000
+	jz .print ; if it was positive, we're done
+	
+	dec r8                 ; make space for the sign character
+	mov byte ptr [r8], '-' ; append a minus sign to the front of the string
+	
+	.print:
+	mov rdi, r8 ; point rdi at the start of the string in the buffer
+	call r15    ; call the sprinter function in r15
+	
+	pop rsp ; clean up the stack space we allocated for the string
+	ret ; return result from sprinter (number of characters written)
+
+; ------------------------------------------------------------------------------
+	
+; u64 __printf_f64_fixed(f64 val, __vprintf_fmt_pack *fmt : rsi)
+__printf_f64_fixed:
+	; if no precision was specified, set it to a default
+	test dword ptr [rsi + __vprintf_fmt_pack.fmt], __vprintf_fmt.prec
+	movz dword ptr [rsi + __vprintf_fmt_pack.prec], 6
+	jmp __printf_floating_fixed_raw ; jump to the handler
+	
+; ------------------------------------------------------------------------------
+
 ; int __vprintf(const char *fmt, arglist *args, sprinter : r15, sprinter_arg : r14)
 ; this serves as the implementation for all the various printf functions.
 ; the format string and arglist should be passed as normal args.
@@ -1120,6 +1278,8 @@ __vprintf:
 		je .string
 		cmp al, 'c'
 		je .char
+		cmp al, 'f'
+		je .f_formatter
 		
 		; otherwise unknown flag
 		.invalid:
@@ -1165,6 +1325,11 @@ __vprintf:
 		.d_formatter:
 		mov qword ptr [rsp + .TMP_START + 0], __printf_fmt_dfetch ; load the dfetch array into temp[0]
 		mov qword ptr [rsp + .TMP_START + 8], __printf_fmt_dprint ; load the dprint array into temp[1]
+		jmp .generic_formatter
+		
+		.f_formatter:
+		mov qword ptr [rsp + .TMP_START + 0], __printf_fmt_ffetch ; load the dfetch array into temp[0]
+		mov qword ptr [rsp + .TMP_START + 8], __printf_fmt_fprint ; load the dprint array into temp[1]
 		
 		; requires a fetch array in temp[0] and a print array in temp[1] (see above) - fetch null iff print null
 		; invokes generic formatting logic on the next parameter in the arglist
@@ -1478,9 +1643,9 @@ __printf_fmt_ufetch: ; %u will use the same arg fetchers
 __printf_fmt_xfetch: ; %x will use the same arg fetchers
 __printf_fmt_Xfetch: ; %X will use the same arg fetchers
 __printf_fmt_ofetch: ; %o will use the same arg fetchers
-	dq arglist_i32 ; default
-	dq arglist_i8  ; hh
-	dq arglist_i16 ; h
+	dq arglist_i64 ; default
+	dq arglist_i64 ; hh
+	dq arglist_i64 ; h
 	dq arglist_i64 ; l
 	dq arglist_i64 ; ll
 	dq arglist_i64 ; j
@@ -1488,6 +1653,19 @@ __printf_fmt_ofetch: ; %o will use the same arg fetchers
 	dq arglist_i64 ; t
 	dq 0           ; L
 static_assert $-__printf_fmt_dfetch == __vprintf_scale.COUNT * 8
+
+align 8
+__printf_fmt_ffetch: ; arg fetchers for %f option
+	dq arglist_f64 ; default
+	dq 0           ; hh
+	dq 0           ; h
+	dq arglist_f64 ; l
+	dq 0           ; ll
+	dq 0           ; j
+	dq 0           ; z
+	dq 0           ; t
+	dq 0           ; L
+static_assert $-__printf_fmt_ffetch == __vprintf_scale.COUNT * 8
 
 align 8
 __printf_fmt_dprint: ; printer functions for the %d option
@@ -1554,6 +1732,19 @@ __printf_fmt_oprint:
 	dq __printf_u64_octal ; t
 	dq 0                  ; L
 static_assert $-__printf_fmt_oprint == __vprintf_scale.COUNT * 8
+
+align 8
+__printf_fmt_fprint:
+	dq __printf_f64_fixed ; default
+	dq 0                  ; hh
+	dq 0                  ; h
+	dq __printf_f64_fixed ; l
+	dq 0                  ; ll
+	dq 0                  ; j
+	dq 0                  ; z
+	dq 0                  ; t
+	dq 0                  ; L
+static_assert $-__printf_fmt_fprint == __vprintf_scale.COUNT * 8
 
 segment .data
 
