@@ -21,6 +21,7 @@ global scanf, vscanf
 
 global fprintf, vfprintf
 global printf, vprintf
+global sprintf, vsprintf
 
 ; --------------------------------------
 
@@ -1410,6 +1411,66 @@ __vprintf:
 
 ; --------------------------------------
 
+; int vsprintf(char *s, const char *fmt, arglist arg)
+vsprintf:
+	push r14
+	push r15
+	
+	mov byte ptr [rdi], 0 ; null terminate buffer in case result is empty string (never calls sprinter)
+	
+	mov r14, rdi
+	mov rdi, rsi
+	mov rsi, rdx
+	mov r15, .__SPRINTER
+	call __vprintf
+	
+	pop r15
+	pop r14
+	ret
+	
+	.__SPRINTER:
+		mov rbx, rdi
+		mov rcx, -1
+		mov al, 0
+		cld
+		repne scasb ; rdi is now 1 past first null terminator
+		
+		dec rdi
+		sub rdi, rbx
+		mov rcx, rdi ; compute length of string into count
+		mov rax, rdi ; also store in return value for later
+		
+		mov rsi, rbx
+		mov rdi, r14          ; buffer is dest (we point at its null terminator)
+		rep movsb             ; append the string to the end of the buffer
+		mov byte ptr [rdi], 0 ; null terminate the result
+		mov r14, rdi          ; update the sprinter pos parameter
+		
+		ret ; return number of chars printed (excluding null terminator)
+; int sprintf(char *s, const char *fmt, ...)
+sprintf:
+	mov r10, rsp
+	push r15
+	call arglist_start
+	push rax
+	push rsi
+	push rdi
+	mov rdi, rax
+	call arglist_i64
+	call arglist_i64
+
+	mov rdx, rdi
+	pop rdi
+	pop rsi
+	call vsprintf
+	mov r15, rax
+	
+	pop rdi
+	call arglist_end
+	mov rax, r15
+	pop r15
+	ret
+		
 ; int vfprintf(FILE *stream, const char *fmt, arglist *args)
 vfprintf:
 	push r14
