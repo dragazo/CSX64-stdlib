@@ -1,11 +1,11 @@
-; this file adds utilities for handling vararg parameter lists
-; this is nonstandard and just serves as convenience for CSX64 programs
+; this file adds utilities for handling vararg parameter lists.
+; all functions in this file assume all arguments were passed to csxdecl functions.
+; this is designed very similarly to va_list in C except lower level.
 
 global arglist_start, arglist_end
 
 ; contract: these functions may only modify rax
-global arglist_i64, arglist_i32, arglist_i16, arglist_i8
-global arglist_f64, arglist_f32
+global arglist_i, arglist_f
 
 segment .text
 
@@ -44,9 +44,9 @@ arglist_start:
 	
 	add r10, 8 ; put caller's stack arg location in r10 (rsp_init+8 to skip their ret address)
 	sub rsp, arglist.SIZE ; allocate stack space for the arglist struct
-	and rsp, ~(arglist.ALIGN - 1) ; align the stack for the arglist stuct
+	and rsp, ~(arglist.ALIGN - 1) ; align the stack for the arglist struct
 	
-	; initialze the arglist object
+	; initialize the arglist object
 	mov dword ptr [rsp + arglist.reg_index], 0
 	mov dword ptr [rsp + arglist.xmm_index], 0
 	mov qword ptr [rsp + arglist.stack_pos], r10
@@ -106,7 +106,7 @@ arglist_end:
 ; these functions must be called on a valid arglist (after arglist_start() but before arglist_end()).
 ; additionally, these functions guarantee not to modify rdi.
 
-arglist_i64:
+arglist_i:
 	mov eax, dword ptr [rdi + arglist.reg_index]
 	cmp eax, 6
 	jae .get_from_stack
@@ -120,49 +120,7 @@ arglist_i64:
 	mov rax, qword ptr [rax]
 	add qword ptr [rdi + arglist.stack_pos], 8
 	ret
-arglist_i32:
-	mov eax, dword ptr [rdi + arglist.reg_index]
-	cmp eax, 6
-	jae .get_from_stack
-	
-	mov eax, dword ptr [rdi + arglist.reg_arr + rax*8]
-	inc dword ptr [rdi + arglist.reg_index]
-	ret
-
-	.get_from_stack:
-	mov rax, qword ptr [rdi + arglist.stack_pos]
-	mov eax, dword ptr [rax]
-	add qword ptr [rdi + arglist.stack_pos], 4
-	ret
-arglist_i16:
-	mov eax, dword ptr [rdi + arglist.reg_index]
-	cmp eax, 6
-	jae .get_from_stack
-	
-	mov ax, word ptr [rdi + arglist.reg_arr + rax*8]
-	inc dword ptr [rdi + arglist.reg_index]
-	ret
-
-	.get_from_stack:
-	mov rax, qword ptr [rdi + arglist.stack_pos]
-	mov ax, word ptr [rax]
-	add qword ptr [rdi + arglist.stack_pos], 2
-	ret
-arglist_i8:
-	mov eax, dword ptr [rdi + arglist.reg_index]
-	cmp eax, 6
-	jae .get_from_stack
-	
-	mov al, byte ptr [rdi + arglist.reg_arr + rax*8]
-	inc dword ptr [rdi + arglist.reg_index]
-	ret
-
-	.get_from_stack:
-	mov rax, qword ptr [rdi + arglist.stack_pos]
-	mov al, byte ptr [rax]
-	inc qword ptr [rdi + arglist.stack_pos]
-	ret
-arglist_f64:
+arglist_f:
 	mov eax, dword ptr [rdi + arglist.xmm_index]
 	cmp eax, 8
 	jae .get_from_stack
@@ -176,19 +134,4 @@ arglist_f64:
 	mov rax, qword ptr [rdi + arglist.stack_pos]
 	movsd xmm0, qword ptr [rax]
 	add qword ptr [rdi + arglist.stack_pos], 8
-	ret
-arglist_f32:
-	mov eax, dword ptr [rdi + arglist.xmm_index]
-	cmp eax, 8
-	jae .get_from_stack
-	
-	shl rax, 4 ; mult 16 (xmm_arr holds xmmwords)
-	movss xmm0, dword ptr [rdi + arglist.xmm_arr + rax]
-	inc dword ptr [rdi + arglist.xmm_index]
-	ret
-
-	.get_from_stack:
-	mov rax, qword ptr [rdi + arglist.stack_pos]
-	movss xmm0, dword ptr [rax]
-	add qword ptr [rdi + arglist.stack_pos], 4
 	ret

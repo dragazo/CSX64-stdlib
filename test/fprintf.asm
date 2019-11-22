@@ -4,7 +4,7 @@ global main
 
 extern stdout, stderr, EOF, NULL
 extern fprintf, printf, puts, fputs, vsprintf
-extern arglist_start, arglist_end, arglist_i64
+extern arglist_start, arglist_end, arglist_i
 extern strlen, exit, strcmp
 
 segment .bss
@@ -26,22 +26,23 @@ assert_printf:
 	push rdi
 	
 	mov rdi, rax
-	times 2 call arglist_i64
+	times 2 call arglist_i
 	
 	mov rdx, rdi
 	mov rdi, assert_printf_buffer
 	pop rsi
 	call vsprintf
+	push rax
 	
-	mov rdi, qword ptr [rsp]
+	mov rdi, qword ptr [rsp + 8]
 	mov rsi, assert_printf_buffer
 	call strcmp
 	cmp eax, 0
 	je .same
 
-	mov rdi, $str(`SPRINTF ASERTION FAILURE:\nexpected: `)
+	mov rdi, $str(`SPRINTF ASERTION FAILURE:\nexpected:`)
 	call puts
-	mov rdi, qword ptr [rsp]
+	mov rdi, qword ptr [rsp + 8]
 	call puts
 	mov rdi, $str(`actual: `)
 	call puts
@@ -52,6 +53,22 @@ assert_printf:
 	call exit
 	
 	.same:
+	mov rdi, assert_printf_buffer
+	call strlen
+	pop rbx
+	cmp rax, rbx
+	je .right_return_val
+	
+	debug_cpu
+	mov rdi, $str(`SPRINTF ASSERTION FAILURE: wrong return value`)
+	call puts
+	mov rdi, qword ptr [rsp]
+	call puts
+	
+	mov edi, 65
+	call exit
+	
+	.right_return_val:
 	add rsp, 8
 	
 	if show_assertion_tests mov rdi, assert_printf_buffer

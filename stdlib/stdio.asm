@@ -16,12 +16,13 @@ global fputc, putc, putchar
 global fputs, puts
 global fwrite
 
-global fscanf, vfscanf
 global scanf, vscanf
+global fscanf, vfscanf
 
-global fprintf, vfprintf
 global printf, vprintf
+global fprintf, vfprintf
 global sprintf, vsprintf
+global snprintf, vsnprintf
 
 ; --------------------------------------
 
@@ -34,8 +35,7 @@ global fopen, fflush, fclose
 ; --------------------------------------
 
 extern arglist_start, arglist_end
-extern arglist_i64, arglist_i32, arglist_i16, arglist_i8
-extern arglist_f64, arglist_f32
+extern arglist_i, arglist_f
 
 extern malloc, free
 extern strlen
@@ -455,7 +455,7 @@ __vscanf:
 		.i32_decimal:
 		call __scanf_skipws ; this format flag implicitly skips white space before parsing
 		mov rdi, qword ptr [rsp + 8] ; load the arglist
-		call arglist_i64 ; get the next parse destination (pointer)
+		call arglist_i ; get the next parse destination (pointer)
 		mov rdi, rax
 		call __scanf_i32_decimal ; parse the next i32 value into that location
 		cmp eax, 0
@@ -466,7 +466,7 @@ __vscanf:
 		.u32_decimal:
 		call __scanf_skipws ; this format flag implicitly skips white space before parsing
 		mov rdi, qword ptr [rsp + 8] ; load the arglist
-		call arglist_i64 ; get the next parse destination (pointer)
+		call arglist_i ; get the next parse destination (pointer)
 		mov rdi, rax
 		call __scanf_u32_decimal ; parse the next i32 value into that location
 		cmp eax, 0
@@ -536,8 +536,7 @@ fscanf:
 	push rsi
 	push rdi
 	mov rdi, rax
-	call arglist_i64
-	call arglist_i64
+	times 2 call arglist_i
 	
 	mov rdx, rdi
 	pop rdi
@@ -565,7 +564,7 @@ scanf:
 	push rax
 	push rdi
 	mov rdi, rax
-	call arglist_i64
+	call arglist_i
 	
 	mov rsi, rdi
 	pop rdi
@@ -685,7 +684,7 @@ __vprintf_read_prefix:
 	or ecx, __vprintf_fmt.width ; mark that a width was specified
 	mov r11, rdi     ; save rdi in r11 for the main __vprintf func
 	mov rdi, r10     ; load the arglist pointer
-	call arglist_i32 ; get a 32-bit integer arg from the pack and use it as width
+	call arglist_i   ; get a 32-bit integer arg from the pack and use it as width
 	mov rdi, r11
 	cmp eax, 0
 	movl eax, 0 ; if prec is negative, set it to zero
@@ -726,7 +725,7 @@ __vprintf_read_prefix:
 	inc r12 ; bump up to the next character
 	mov r11, rdi     ; save rdi in r11 for the main __vprintf func
 	mov rdi, r10     ; load the arglist pointer
-	call arglist_i32 ; get a 32-bit integer arg from the pack and use it as precision
+	call arglist_i   ; get a 32-bit integer arg from the pack and use it as precision
 	mov rdi, r11
 	cmp eax, 0
 	movl eax, 0 ; if prec is negative, set it to zero
@@ -1354,7 +1353,7 @@ __vprintf:
 		.string:
 		call .__FLUSH_BUFFER         ; flush the buffer before we do the formatted output
 		mov rdi, qword ptr [rsp + 8] ; load the arglist
-		call arglist_i64             ; get the pointer (64-bit integer)
+		call arglist_i               ; get the pointer (64-bit integer)
 		mov rdi, rax                 ; put it in rdi
 		call r15                     ; print the string using the sprinter function
 		add r13, rax                 ; update total printed chars
@@ -1364,7 +1363,7 @@ __vprintf:
 		.char:
 		mov qword ptr [rsp + .TMP_START], rdi ; save buffer size in tmp space
 		mov rdi, qword ptr [rsp + 8]          ; load the arglist
-		call arglist_i8                       ; get the character to print (8-bit integer) (now in al)
+		call arglist_i                        ; get the character to print (8-bit integer) (now in al)
 		mov rdi, qword ptr [rsp + .TMP_START] ; reload the buffer size
 		
 		; FALL THROUGH INTENTIONAL
@@ -1391,6 +1390,8 @@ __vprintf:
 	call .__FLUSH_BUFFER
 
 	add rsp, .BUF_START + (.BUF_CAP+1) + .TMP_SIZE ; clean up stack space
+	
+	mov rax, r13 ; return total number of characters written
 	ret
 ; this is a pseudo-function to call which flushes buffer.
 ; the buffer must be reinitialized after this operation (e.g. after any functions calls).
@@ -1411,7 +1412,88 @@ __vprintf:
 
 ; --------------------------------------
 
-; int vsprintf(char *s, const char *fmt, arglist arg)
+; int vsnprintf(char *s, u64 n, const char *fmt, arglist *args)
+vsnprintf:
+	cmp rsi, 0
+	jz .noop ; if n == 0 do nothing - don't even trivially null terminate the buffer
+	
+	push r14
+	push r15
+	
+	mov byte ptr [rdi], 0 ; null terminate buffer in case result is empty string (never calls sprinter)
+	
+	; create the sprinter arg structure
+	dec rsi  ; n is size of array, so n-1 is max number of chars to write (+ the null terminator)
+	push rsi ; arg[1] holds the maximum number of characters we can still write to the buffer
+	push rdi ; arg[0] holds the address at which to perform string cat
+	
+	mov r14, rsp
+	mov rdi, rdx
+	mov rsi, rcx
+	mov r15, .__SPRINTER
+	call __vprintf
+	
+	add rsp, 16 ; destroy the sprinter arg structure when we're done
+	
+	pop r15
+	pop r14
+	ret
+	
+	.noop:
+	xor eax, eax
+	ret
+	
+	.__SPRINTER:
+		mov rbx, rdi
+		mov rcx, -1
+		mov al, 0
+		cld
+		repne scasb ; rdi is now 1 past first null terminator
+		
+		dec rdi
+		sub rdi, rbx                 ; compute length of string to append
+		mov rdx, qword ptr [r14 + 8] ; fetch number of chars we can actually append
+		cmp rdx, rdi                 ; compare them
+		movb rdi, rdx                ; if num we can actually append is smaller, use it instead
+		
+		mov rcx, rdi ; put length of string into count
+		mov rax, rdi ; also store in return value for later
+		
+		mov rsi, rbx
+		mov rdi, qword ptr [r14] ; buffer is dest (we point at its null terminator)
+		rep movsb                ; append the string to the end of the buffer (as many chars as we can, perhaps none)
+		mov byte ptr [rdi], 0    ; null terminate the result
+		mov qword ptr [r14], rdi ; update the sprinter pos parameter
+		
+		sub qword ptr [r14 + 8], rax ; update the sprinter max num additional chars parameter
+		
+		ret ; return number of chars printed (excluding null terminator)
+; int snprintf(char *s, u64 n, const char *fmt, ...)
+snprintf:
+	mov r10, rsp
+	push r15
+	call arglist_start
+	push rax
+	push rdx
+	push rsi
+	push rdi
+	mov rdi, rax
+	times 3 call arglist_i
+
+	mov rcx, rdi
+	pop rdi
+	pop rsi
+	pop rdx
+	call vsnprintf
+	mov r15, rax
+	
+	pop rdi
+	call arglist_end
+	mov rax, r15
+	pop r15
+	ret
+		
+; int vsprintf(char *s, const char *fmt, arglist *args)
 vsprintf:
 	push r14
 	push r15
@@ -1436,8 +1518,9 @@ vsprintf:
 		repne scasb ; rdi is now 1 past first null terminator
 		
 		dec rdi
-		sub rdi, rbx
-		mov rcx, rdi ; compute length of string into count
+		sub rdi, rbx ; compute length of string to append
+		
+		mov rcx, rdi ; put length of string into count
 		mov rax, rdi ; also store in return value for later
 		
 		mov rsi, rbx
@@ -1456,8 +1539,7 @@ sprintf:
 	push rsi
 	push rdi
 	mov rdi, rax
-	call arglist_i64
-	call arglist_i64
+	times 2 call arglist_i
 
 	mov rdx, rdi
 	pop rdi
@@ -1498,8 +1580,7 @@ fprintf:
 	push rsi
 	push rdi
 	mov rdi, rax
-	call arglist_i64
-	call arglist_i64
+	times 2 call arglist_i
 
 	mov rdx, rdi
 	pop rdi
@@ -1527,7 +1608,7 @@ printf:
 	push rax
 	push rdi
 	mov rdi, rax
-	call arglist_i64
+	call arglist_i
 	
 	mov rsi, rdi
 	pop rdi
@@ -1704,28 +1785,28 @@ __printf_fmt_ufetch: ; %u will use the same arg fetchers
 __printf_fmt_xfetch: ; %x will use the same arg fetchers
 __printf_fmt_Xfetch: ; %X will use the same arg fetchers
 __printf_fmt_ofetch: ; %o will use the same arg fetchers
-	dq arglist_i64 ; default
-	dq arglist_i64 ; hh
-	dq arglist_i64 ; h
-	dq arglist_i64 ; l
-	dq arglist_i64 ; ll
-	dq arglist_i64 ; j
-	dq arglist_i64 ; z
-	dq arglist_i64 ; t
-	dq 0           ; L
+	dq arglist_i ; default
+	dq arglist_i ; hh
+	dq arglist_i ; h
+	dq arglist_i ; l
+	dq arglist_i ; ll
+	dq arglist_i ; j
+	dq arglist_i ; z
+	dq arglist_i ; t
+	dq 0         ; L
 static_assert $-__printf_fmt_dfetch == __vprintf_scale.COUNT * 8
 
 align 8
 __printf_fmt_ffetch: ; arg fetchers for %f option
-	dq arglist_f64 ; default
-	dq 0           ; hh
-	dq 0           ; h
-	dq arglist_f64 ; l
-	dq 0           ; ll
-	dq 0           ; j
-	dq 0           ; z
-	dq 0           ; t
-	dq 0           ; L
+	dq arglist_f ; default
+	dq 0         ; hh
+	dq 0         ; h
+	dq arglist_f ; l
+	dq 0         ; ll
+	dq 0         ; j
+	dq 0         ; z
+	dq 0         ; t
+	dq 0         ; L
 static_assert $-__printf_fmt_ffetch == __vprintf_scale.COUNT * 8
 
 align 8

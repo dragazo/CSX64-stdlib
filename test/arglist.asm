@@ -3,7 +3,7 @@
 global main
 
 extern arglist_start, arglist_end
-extern arglist_i64, arglist_f64
+extern arglist_i, arglist_f
 extern puts, putchar
 
 segment .text
@@ -23,13 +23,13 @@ printer:
 	
 	; extract and ignore the first arg (n)
 	mov rdi, rax
-	call arglist_i64
+	call arglist_i
 	
 	; print each arg, maintain character total
 	jmp .loop_tst
 	.loop_bod:
 		mov rdi, r14
-		call arglist_i64
+		call arglist_i
 		mov rdi, rax
 		call puts
 		add r15, rax
