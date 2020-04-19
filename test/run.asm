@@ -60,6 +60,26 @@ prefix_stuff_dont_call_this: ; (it assembling errorlessly is the test case)
 	movbs ax, di
 	movbs eax, dword ptr [rdi]
 	
+	in al, 56
+	in ax, 43
+	in eax, 0
+	in rax, 12
+	
+	in al, dx
+	in ax, dx
+	in eax, dx
+	in rax, dx
+	
+	out 32, al
+	out 16, ax
+	out 1, eax
+	out 0, rax
+	
+	out dx, al
+	out dx, ax
+	out dx, eax
+	out dx, rax
+	
 dump:
     mov rdi, 40125
     mov rsi, rdi
